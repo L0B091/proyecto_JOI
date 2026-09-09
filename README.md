@@ -1,6 +1,3 @@
-# proyecto_JOI
-asistente personal multimodal
-JOI
 Asistente personal multimodal
 JOI es un proyecto de asistente personal diseñado para combinar conversación, memoria, personalidad, APIs y expresión multimodal mediante una arquitectura modular.
 El repositorio contiene actualmente el backend Node.js, la aplicación Flutter y los recursos audiovisuales del avatar.
