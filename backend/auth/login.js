@@ -1,204 +1,148 @@
-// login.js
-// Sistema central de autenticación y manejo de sesiones para Joi
-
 import crypto from "crypto";
 import usuariosMemoria from "../memoria/usuariosMemoria.js";
 
-// =============================
-// CONFIGURACIÓN
-// =============================
-
-const DURACION_TOKEN = 1000 * 60 * 60 * 24; // 24 horas
-
-// =============================
-// SESIONES ACTIVAS
-// =============================
-
-const sesiones = {};
-
-// =============================
-// GENERAR TOKEN SEGURO
-// =============================
+const DURACION_TOKEN = 1000 * 60 * 60 * 24 * 7;
+const sesiones = new Map();
 
 function generarToken() {
-    return crypto.randomBytes(32).toString("hex");
+  return crypto.randomBytes(48).toString("hex");
 }
 
-// =============================
-// HASH DE CONTRASEÑA
-// =============================
-
-function hashPassword(password) {
-    return crypto
-        .createHash("sha256")
-        .update(password)
-        .digest("hex");
+function crearHash(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const passwordHash = crypto.scryptSync(String(password), salt, 64).toString("hex");
+  return { passwordHash, passwordSalt: salt };
 }
 
-// =============================
-// REGISTRAR USUARIO
-// =============================
+function emitirSesion(usuario) {
+  const token = generarToken();
+  const creado = Date.now();
+  const expira = creado + DURACION_TOKEN;
+
+  sesiones.set(token, {
+    token,
+    userId: usuario.id,
+    email: usuario.email,
+    creado,
+    expira
+  });
+
+  return {
+    token,
+    expiraEn: expira,
+    perfil: {
+      userId: usuario.id,
+      email: usuario.email,
+      displayName: usuario.displayName,
+      photoUrl: usuario.photoUrl
+    }
+  };
+}
 
 function registrarUsuario(email, password, perfil = {}, tipoLogin = "local") {
+  const normalizedEmail = usuariosMemoria.normalizeEmail(email);
+  if (!normalizedEmail) {
+    return { ok: false, error: "Email requerido" };
+  }
 
-    if (!email) {
-        return {
-            ok: false,
-            error: "Email requerido"
-        };
-    }
+  if (!password) {
+    return { ok: false, error: "Contraseña requerida" };
+  }
 
-    const passwordHash = hashPassword(password);
+  if (usuariosMemoria.obtenerUsuario(normalizedEmail)) {
+    return { ok: false, error: "Usuario ya registrado" };
+  }
 
-    const usuario = {
-        email,
-        passwordHash,
-        perfil,
-        tipoLogin,
-        creado: new Date().toISOString()
-    };
+  const { passwordHash, passwordSalt } = crearHash(password);
+  const usuario = usuariosMemoria.guardarUsuario(normalizedEmail, {
+    email: normalizedEmail,
+    passwordHash,
+    passwordSalt,
+    tipoLogin,
+    displayName: perfil.displayName || perfil.nombre || normalizedEmail
+  });
 
-    usuariosMemoria.guardarUsuario(email, usuario);
-
-    const token = generarToken();
-
-    sesiones[token] = {
-        email,
-        creado: Date.now(),
-        expira: Date.now() + DURACION_TOKEN
-    };
-
-    return {
-        ok: true,
-        token,
-        perfil
-    };
+  const sesion = emitirSesion(usuario);
+  return { ok: true, ...sesion };
 }
-
-// =============================
-// LOGIN DE USUARIO
-// =============================
 
 function loginUsuario(email, password) {
+  const normalizedEmail = usuariosMemoria.normalizeEmail(email);
+  const usuario = usuariosMemoria.obtenerUsuario(normalizedEmail);
 
-    const usuario = usuariosMemoria.obtenerUsuario(email);
+  if (!usuario) {
+    return { ok: false, error: "Usuario no encontrado" };
+  }
 
-    if (!usuario) {
-        return {
-            ok: false,
-            error: "Usuario no encontrado"
-        };
-    }
+  if (!usuario.passwordHash || !usuario.passwordSalt) {
+    return { ok: false, error: "Este usuario debe autenticarse con Google" };
+  }
 
-    const passwordHash = hashPassword(password);
+  const { passwordHash } = crearHash(password, usuario.passwordSalt);
+  if (passwordHash !== usuario.passwordHash) {
+    return { ok: false, error: "Contraseña incorrecta" };
+  }
 
-    if (passwordHash !== usuario.passwordHash) {
-        return {
-            ok: false,
-            error: "Contraseña incorrecta"
-        };
-    }
-
-    const token = generarToken();
-
-    sesiones[token] = {
-        email,
-        creado: Date.now(),
-        expira: Date.now() + DURACION_TOKEN
-    };
-
-    return {
-        ok: true,
-        token,
-        perfil: usuario.perfil
-    };
+  usuariosMemoria.actualizarUltimoLogin(normalizedEmail);
+  return { ok: true, ...emitirSesion(usuario) };
 }
 
-// =============================
-// VALIDAR TOKEN
-// =============================
+function iniciarSesionParaUsuario(email) {
+  const usuario = usuariosMemoria.obtenerUsuario(email);
+  if (!usuario) {
+    return { ok: false, error: "Usuario no encontrado" };
+  }
+
+  usuariosMemoria.actualizarUltimoLogin(usuario.email);
+  return { ok: true, ...emitirSesion(usuario) };
+}
 
 function validarToken(token) {
+  const sesion = sesiones.get(String(token || ""));
+  if (!sesion) return null;
 
-    const sesion = sesiones[token];
+  if (Date.now() > sesion.expira) {
+    sesiones.delete(String(token));
+    return null;
+  }
 
-    if (!sesion) {
-        return null;
-    }
+  const usuario = usuariosMemoria.obtenerUsuario(sesion.email);
+  if (!usuario) return null;
 
-    if (Date.now() > sesion.expira) {
-        delete sesiones[token];
-        return null;
-    }
-
-    const usuario = usuariosMemoria.obtenerUsuario(sesion.email);
-
-    if (!usuario) {
-        return null;
-    }
-
-    return {
-        email: sesion.email,
-        perfil: usuario.perfil
-    };
+  return {
+    userId: usuario.id,
+    email: usuario.email,
+    perfil: {
+      displayName: usuario.displayName,
+      photoUrl: usuario.photoUrl,
+      leyenda: usuario.leyenda,
+      premiumUntil: usuario.premiumUntil
+    },
+    token: sesion.token,
+    expira: sesion.expira
+  };
 }
-
-// =============================
-// SESIONES ACTIVAS
-// =============================
 
 function sesionesActivas() {
-
-    const lista = [];
-
-    for (const token in sesiones) {
-
-        const sesion = sesiones[token];
-
-        if (Date.now() < sesion.expira) {
-            lista.push({
-                email: sesion.email,
-                expira: new Date(sesion.expira).toISOString()
-            });
-        }
-
-    }
-
-    return lista;
+  const ahora = Date.now();
+  return Array.from(sesiones.values())
+    .filter(sesion => sesion.expira > ahora)
+    .map(sesion => ({
+      userId: sesion.userId,
+      email: sesion.email,
+      expira: new Date(sesion.expira).toISOString()
+    }));
 }
-
-// =============================
-// CERRAR SESIÓN
-// =============================
 
 function cerrarSesion(token) {
-
-    if (sesiones[token]) {
-
-        delete sesiones[token];
-
-        return {
-            ok: true,
-            mensaje: "Sesión cerrada"
-        };
-
-    }
-
-    return {
-        ok: false,
-        error: "Token inválido"
-    };
-
+  const existed = sesiones.delete(String(token || ""));
+  return existed ? { ok: true, mensaje: "Sesión cerrada" } : { ok: false, error: "Token inválido" };
 }
 
-// =============================
-// EXPORT DEFAULT
-// =============================
-
 export default {
-    registrarUsuario,
-    loginUsuario,
-    validarToken,
-    sesionesActivas,
-    cerrarSesion
+  registrarUsuario,
+  loginUsuario,
+  iniciarSesionParaUsuario,
+  validarToken,
+  sesionesActivas,
+  cerrarSesion
 };

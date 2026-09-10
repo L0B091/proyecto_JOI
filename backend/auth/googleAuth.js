@@ -1,94 +1,112 @@
-// googleAuth.js
-// Módulo de autenticación con Google (simulado) y verificación de edad mínima
-// Mejorado: modular, manejo de errores, preparado para integración real OAuth
+import { OAuth2Client } from "google-auth-library";
+import login from "./login.js";
+import usuariosMemoria from "../memoria/usuariosMemoria.js";
+import datosUsuario from "../memoria/datosUsuario.js";
+import HttpError from "../utils/httpError.js";
 
-import login from "./login.js";           // Sistema base de login y tokens
-import usuariosMemoria from "../memoria/usuariosMemoria.js"; // Persistencia de usuarios
-
-// Edad mínima permitida
-const EDAD_MINIMA = 15;
-
-// =============================
-// FUNCIONES AUXILIARES
-// =============================
-
-// Calcular edad a partir de fecha de nacimiento (YYYY-MM-DD)
-function calcularEdad(fechaNacimiento) {
-    const hoy = new Date();
-    const nacimiento = new Date(fechaNacimiento);
-    let edad = hoy.getFullYear() - nacimiento.getFullYear();
-    const mes = hoy.getMonth() - nacimiento.getMonth();
-    const dia = hoy.getDate() - nacimiento.getDate();
-    if (mes < 0 || (mes === 0 && dia < 0)) edad--;
-    return edad;
+function getGoogleAudiences() {
+  return String(process.env.GOOGLE_CLIENT_ID || "")
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
 }
 
-// Crear perfil de usuario según edad y restricciones
-function crearPerfilGoogle(googleUser, edad) {
-    const perfil = {
-        nombre: googleUser.nombre,
-        email: googleUser.email,
-        edad,
-        modoAdulto: edad >= EDAD_MINIMA,
-        accesoLimitado: edad >= 15 && edad < EDAD_MINIMA ? true : false
-    };
-    return perfil;
+async function verificarIdToken(idToken) {
+  const audiences = getGoogleAudiences();
+  if (audiences.length === 0) {
+    throw new HttpError(503, "GOOGLE_CLIENT_ID no está configurado");
+  }
+
+  const client = new OAuth2Client();
+  const ticket = await client.verifyIdToken({
+    idToken,
+    audience: audiences
+  });
+
+  const payload = ticket.getPayload();
+  if (!payload?.email || !payload?.sub) {
+    throw new HttpError(401, "Token de Google inválido");
+  }
+
+  return payload;
 }
 
-// =============================
-// AUTENTICACIÓN SIMULADA
-// =============================
+function sincronizarPerfil(payload) {
+  const email = usuariosMemoria.normalizeEmail(payload.email);
+  const existentePorGoogleId = usuariosMemoria.obtenerUsuarioPorGoogleId(payload.sub);
+  const existentePorEmail = usuariosMemoria.obtenerUsuario(email);
+  const base = existentePorGoogleId || existentePorEmail || {};
 
-async function autenticarConGoogle(googleUser) {
-    try {
-        if (!googleUser || !googleUser.email || !googleUser.fechaNacimiento || !googleUser.nombre) {
-            return { error: "Datos de Google incompletos", codigo: 400 };
-        }
+  const usuario = usuariosMemoria.guardarUsuario(email, {
+    ...base,
+    email,
+    googleId: payload.sub,
+    tipoLogin: "google",
+    displayName: payload.name || base.displayName || payload.email,
+    photoUrl: payload.picture || base.photoUrl || null,
+    emailVerified: Boolean(payload.email_verified)
+  });
 
-        const edad = calcularEdad(googleUser.fechaNacimiento);
-        const perfil = crearPerfilGoogle(googleUser, edad);
-
-        // Registrar o logear usuario en sistema base
-        let token;
-        try {
-            token = login.loginUsuario(googleUser.email, "google-simulado").token;
-            // Actualizar perfil en memoria persistente
-            usuariosMemoria.guardarUsuario(googleUser.email, perfil);
-        } catch {
-            token = login.registrarUsuario(googleUser.email, "google-simulado", perfil).token;
-            usuariosMemoria.guardarUsuario(googleUser.email, perfil);
-        }
-
-        return { token, perfil };
-
-    } catch (err) {
-        console.error("Error en googleAuth:", err);
-        return { error: "Error interno de autenticación Google", codigo: 500 };
+  datosUsuario.actualizar(usuario.id, {
+    identidad: {
+      nombre: payload.name || usuario.displayName,
+      apodo: base.displayName || payload.given_name || payload.name || null
+    },
+    cuentas: {
+      email,
+      googleId: payload.sub
     }
+  });
+
+  return usuario;
 }
 
-// =============================
-// VALIDACIÓN DE TOKEN
-// =============================
+async function autenticarConGoogle(idToken) {
+  if (!idToken || typeof idToken !== "string") {
+    throw new HttpError(400, "idToken de Google requerido");
+  }
+
+  let payload;
+  try {
+    payload = await verificarIdToken(idToken);
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw error;
+    }
+
+    throw new HttpError(401, "No se pudo validar el token de Google");
+  }
+
+  const usuario = sincronizarPerfil(payload);
+  const sesion = login.iniciarSesionParaUsuario(usuario.email);
+
+  if (!sesion.ok) {
+    throw new HttpError(500, sesion.error || "No se pudo iniciar la sesión");
+  }
+
+  return {
+    token: sesion.token,
+    expiraEn: sesion.expiraEn,
+    perfil: {
+      userId: usuario.id,
+      email: usuario.email,
+      displayName: usuario.displayName,
+      photoUrl: usuario.photoUrl,
+      emailVerified: usuario.emailVerified
+    }
+  };
+}
 
 function validarToken(token) {
-    return login.validarToken(token);
+  return login.validarToken(token);
 }
-
-// =============================
-// SESIONES ACTIVAS
-// =============================
 
 function sesionesActivas() {
-    return login.sesionesActivas();
+  return login.sesionesActivas();
 }
 
-// =============================
-// EXPORT DEFAULT
-// =============================
-
 export default {
-    autenticarConGoogle,
-    validarToken,
-    sesionesActivas
+  autenticarConGoogle,
+  validarToken,
+  sesionesActivas
 };

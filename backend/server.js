@@ -1,12 +1,3 @@
-/*
-* SERVER JOI - FINAL
-* ------------------
-* - Punto de entrada del backend
-* - Conecta cliente con orquestador
-* - Manejo básico de errores
-* - Listo para escalar
-*/
-
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -23,43 +14,53 @@ import mercadoPagoApi from "./api/mercadoPago.js";
 import premiumManager from "./modulos/premium/premiumManager.js";
 import codigoMemoria from "./memoria/codigoMemoria.js";
 import documentosFiscales from "./memoria/documentosFiscales.js";
-
-// 🧠 [MEMORIA_ORQUESTADOR] (NO IMPORTADO AQUÍ DIRECTAMENTE)
-// Flujo de memoria se ejecuta dentro de orquestadorChat
-
-// =============================
-// CONFIGURACIÓN
-// =============================
+import googleAuth from "./auth/googleAuth.js";
+import login from "./auth/login.js";
+import { optionalAuth, requireAuth } from "./auth/authMiddleware.js";
+import bitacoraManager from "./modulos/bitacora/bitacoraManager.js";
+import datosUsuario from "./memoria/datosUsuario.js";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// =============================
-// MIDDLEWARES
-// =============================
-
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
-// =============================
-// RUTA BASE (HOME)
-// =============================
+function handleAsync(handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
+function authStatus() {
+  return {
+    googleConfigured: Boolean(String(process.env.GOOGLE_CLIENT_ID || "").trim()),
+    mercadoPagoConfigured: Boolean(String(process.env.MERCADO_PAGO_ACCESS_TOKEN || "").trim()),
+    openWeatherConfigured: Boolean(String(process.env.OPENWEATHER_API_KEY || "").trim()),
+    newsConfigured: Boolean(String(process.env.NEWS_API_KEY || "").trim())
+  };
+}
+
+function ensureOwnUser(req) {
+  const requested = String(req.params.userId || req.auth?.userId || "");
+  if (!req.auth || !requested || requested !== req.auth.userId) {
+    const error = new Error("No autorizado para acceder a este usuario");
+    error.status = 403;
+    throw error;
+  }
+  return requested;
+}
 
 app.get("/", (req, res) => {
   res.json({
     ok: true,
     servicio: "JOI BACKEND",
-    ruta: "HOME",
-    estado: "activo 🚀",
-    endpoints: ["/", "/health", "/chat"]
+    estado: "activo",
+    endpoints: ["/health", "/chat", "/api/auth/*", "/api/bitacora/me"]
   });
 });
-
-// =============================
-// HEALTH CHECK
-// =============================
 
 app.get("/health", (req, res) => {
   res.status(200).json({
@@ -68,353 +69,243 @@ app.get("/health", (req, res) => {
     estado: "activo",
     timestamp: new Date().toISOString(),
     llm: veniceClient.obtenerDiagnostico(),
-
-    // 🧠 [MEMORIA_ORQUESTADOR]
-    // aquí no se ejecuta memoria, pero sirve para diagnóstico del sistema
+    integrations: authStatus()
   });
+});
+
+app.post("/api/auth/register", handleAsync(async (req, res) => {
+  const { email, password, displayName } = req.body || {};
+  const resultado = login.registrarUsuario(email, password, { displayName });
+  if (!resultado.ok) {
+    return res.status(400).json(resultado);
+  }
+
+  datosUsuario.actualizar(resultado.perfil.userId, {
+    identidad: {
+      nombre: displayName || email,
+      apodo: displayName || email
+    },
+    cuentas: {
+      email
+    }
+  });
+
+  return res.status(201).json({ ok: true, ...resultado });
+}));
+
+app.post("/api/auth/login", handleAsync(async (req, res) => {
+  const { email, password } = req.body || {};
+  const resultado = login.loginUsuario(email, password);
+  if (!resultado.ok) {
+    return res.status(401).json(resultado);
+  }
+  return res.json({ ok: true, ...resultado });
+}));
+
+app.post("/api/auth/google", handleAsync(async (req, res) => {
+  const { idToken } = req.body || {};
+  const resultado = await googleAuth.autenticarConGoogle(idToken);
+  return res.status(200).json({ ok: true, ...resultado });
+}));
+
+app.get("/api/auth/me", requireAuth, (req, res) => {
+  res.json({ ok: true, data: req.auth });
+});
+
+app.post("/api/auth/logout", requireAuth, (req, res) => {
+  res.json(login.cerrarSesion(req.authToken));
+});
+
+app.get("/api/bitacora/me", requireAuth, (req, res) => {
+  res.json({ ok: true, data: bitacoraManager.obtenerBitacora(req.auth.userId) });
+});
+
+app.patch("/api/bitacora/me", requireAuth, (req, res) => {
+  res.json({ ok: true, data: bitacoraManager.actualizarBitacora(req.auth.userId, req.body || {}) });
 });
 
 app.get("/api/hora", (req, res) => {
-  const zonaHoraria = req.query.zonaHoraria;
-  res.json({
-    ok: true,
-    data: horaApi.obtenerHoraActual(zonaHoraria)
-  });
+  res.json({ ok: true, data: horaApi.obtenerHoraActual(req.query.zonaHoraria) });
 });
 
-app.get("/api/reloj/:userId", (req, res) => {
-  const { userId } = req.params;
+app.get("/api/reloj/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
   res.json({
     ok: true,
     data: {
       ahora: relojApi.obtenerHoraActual(),
-      minutosDesdeUltimaInteraccion:
-        relojApi.tiempoDesdeUltimaInteraccion(userId)
+      minutosDesdeUltimaInteraccion: relojApi.tiempoDesdeUltimaInteraccion(userId)
     }
   });
 });
 
-app.post("/api/reloj/:userId/interaccion", (req, res) => {
-  const { userId } = req.params;
+app.post("/api/reloj/:userId/interaccion", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
   relojApi.guardarUltimaInteraccion(userId);
-  res.json({
-    ok: true,
-    data: {
-      userId,
-      ultimaInteraccionRegistrada: true
-    }
-  });
+  res.json({ ok: true, data: { userId, ultimaInteraccionRegistrada: true } });
 });
 
-app.get("/api/clima", async (req, res) => {
+app.get("/api/clima", handleAsync(async (req, res) => {
   const lat = Number(req.query.lat ?? -34.6037);
   const lon = Number(req.query.lon ?? -58.3816);
   const data = await climaApi(lat, lon);
   res.json({ ok: true, data });
-});
+}));
 
-app.get("/api/noticias", async (req, res) => {
+app.get("/api/noticias", handleAsync(async (req, res) => {
   const ciudad = String(req.query.ciudad || "");
-  const categorias = String(
-    req.query.categorias || ""
-  )
+  const categorias = String(req.query.categorias || "")
     .split(",")
     .map(item => item.trim())
     .filter(Boolean);
 
-  const noticias =
-    await noticiasApi.obtenerNoticias(
-      ciudad,
-      categorias
-    );
-
-  res.json({
-    ok: true,
-    data: noticias
-  });
-});
-
-app.get("/api/calendario/:userId", (req, res) => {
-  res.json({
-    ok: true,
-    data: calendarioApi.listarEventos(
-      req.params.userId
-    )
-  });
-});
-
-app.post("/api/calendario/:userId", (req, res) => {
-  const data = calendarioApi.agregarEvento(
-    req.params.userId,
-    req.body
-  );
-  res.json({
-    ok: data.exito !== false,
-    data
-  });
-});
-
-app.delete("/api/calendario/:userId/:eventoId", (req, res) => {
-  const data =
-    calendarioApi.eliminarEvento(
-      req.params.userId,
-      req.params.eventoId
-    );
-  res.json({
-    ok: data.exito,
-    data
-  });
-});
-
-app.get("/api/notificaciones/:userId", (req, res) => {
-  res.json({
-    ok: true,
-    data:
-      notificacionesApi.listarNotificaciones(
-        req.params.userId
-      )
-  });
-});
-
-app.post("/api/notificaciones/:userId", (req, res) => {
-  const { titulo, mensaje, tipo } = req.body;
-  const data =
-    notificacionesApi.enviarNotificacion(
-      req.params.userId,
-      titulo,
-      mensaje,
-      tipo
-    );
+  const data = await noticiasApi.obtenerNoticias(ciudad, categorias);
   res.json({ ok: true, data });
+}));
+
+app.get("/api/calendario/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  res.json({ ok: true, data: calendarioApi.listarEventos(userId) });
 });
 
-app.post("/api/notificaciones/:userId/:id/leida", (req, res) => {
-  const data =
-    notificacionesApi.marcarLeida(
-      req.params.userId,
-      req.params.id
-    );
+app.post("/api/calendario/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const data = calendarioApi.agregarEvento(userId, req.body);
+  res.json({ ok: data.exito !== false, data });
+});
+
+app.delete("/api/calendario/:userId/:eventoId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const data = calendarioApi.eliminarEvento(userId, req.params.eventoId);
+  res.json({ ok: data.exito, data });
+});
+
+app.get("/api/notificaciones/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  res.json({ ok: true, data: notificacionesApi.listarNotificaciones(userId) });
+});
+
+app.post("/api/notificaciones/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const { titulo, mensaje, tipo } = req.body || {};
+  res.json({ ok: true, data: notificacionesApi.enviarNotificacion(userId, titulo, mensaje, tipo) });
+});
+
+app.post("/api/notificaciones/:userId/:id/leida", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const data = notificacionesApi.marcarLeida(userId, req.params.id);
   res.json({ ok: Boolean(data), data });
 });
 
 app.get("/api/mercadopago/plan", (req, res) => {
-  res.json({
-    ok: true,
-    data:
-      mercadoPagoApi.explicarPremium(
-        String(req.query.feature || "M/A")
-      )
-  });
+  res.json({ ok: true, data: mercadoPagoApi.explicarPremium(String(req.query.feature || "M/A")) });
 });
 
-app.post("/api/mercadopago/checkout", async (req, res) => {
-  const { userId, feature } = req.body;
-  const data =
-    await mercadoPagoApi.generarLinkPago(
-      userId || "anonimo",
-      feature || "M/A"
-    );
+app.post("/api/mercadopago/checkout", requireAuth, handleAsync(async (req, res) => {
+  const data = await mercadoPagoApi.generarLinkPago(req.auth.userId, req.body?.feature || "M/A");
   res.json({ ok: true, data });
-});
+}));
 
-app.post("/api/mercadopago/verify", async (req, res) => {
-  const { userId, paymentId, status } = req.body;
-  const data =
-    await mercadoPagoApi.verificarPago(
-      paymentId,
-      userId || "anonimo",
-      status || "approved"
-    );
+app.post("/api/mercadopago/verify", requireAuth, handleAsync(async (req, res) => {
+  const data = await mercadoPagoApi.verificarPago(req.body?.paymentId, req.auth.userId);
   res.json({ ok: Boolean(data?.ok), data });
+}));
+
+app.post("/api/mercadopago/webhook", handleAsync(async (req, res) => {
+  const data = await mercadoPagoApi.procesarWebhook(req.body || {}, req.query || {});
+  res.json({ ok: true, data });
+}));
+
+app.get("/api/premium/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  res.json({ ok: true, data: premiumManager.obtenerEstado(userId) });
 });
 
-app.get("/api/premium/:userId", (req, res) => {
-  res.json({
-    ok: true,
-    data: premiumManager.obtenerEstado(
-      req.params.userId
-    )
-  });
-});
-
-app.get("/api/memoria/codigo/:userId", (req, res) => {
-  const { userId } = req.params;
+app.get("/api/memoria/codigo/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
   const q = String(req.query.q || "");
-  const data = q
-    ? codigoMemoria.buscarArchivos(userId, q)
-    : codigoMemoria.listarArchivos(userId);
+  const data = q ? codigoMemoria.buscarArchivos(userId, q) : codigoMemoria.listarArchivos(userId);
   res.json({ ok: true, data });
 });
 
-app.post("/api/memoria/codigo/:userId", (req, res) => {
-  const data = codigoMemoria.guardarArchivo(
-    req.params.userId,
-    req.body
-  );
-  res.json({ ok: true, data });
+app.post("/api/memoria/codigo/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  res.json({ ok: true, data: codigoMemoria.guardarArchivo(userId, req.body) });
 });
 
-app.get("/api/memoria/codigo/:userId/:archivoId", (req, res) => {
-  const data = codigoMemoria.obtenerArchivo(
-    req.params.userId,
-    req.params.archivoId
-  );
+app.get("/api/memoria/codigo/:userId/:archivoId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const data = codigoMemoria.obtenerArchivo(userId, req.params.archivoId);
   res.json({ ok: Boolean(data), data });
 });
 
-app.delete("/api/memoria/codigo/:userId/:archivoId", (req, res) => {
-  const ok = codigoMemoria.eliminarArchivo(
-    req.params.userId,
-    req.params.archivoId
-  );
-  res.json({ ok });
+app.delete("/api/memoria/codigo/:userId/:archivoId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  res.json({ ok: codigoMemoria.eliminarArchivo(userId, req.params.archivoId) });
 });
 
-app.get("/api/memoria/fiscal/:userId", (req, res) => {
+app.get("/api/memoria/fiscal/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
   res.json({
     ok: true,
     data: {
-      documentos:
-        documentosFiscales.listarDocumentos(
-          req.params.userId
-        ),
-      resumen:
-        documentosFiscales.resumen(
-          req.params.userId
-        )
+      documentos: documentosFiscales.listarDocumentos(userId),
+      resumen: documentosFiscales.resumen(userId)
     }
   });
 });
 
-app.post("/api/memoria/fiscal/:userId", (req, res) => {
-  const data =
-    documentosFiscales.guardarDocumento(
-      req.params.userId,
-      req.body
-    );
-  res.json({ ok: true, data });
+app.post("/api/memoria/fiscal/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  res.json({ ok: true, data: documentosFiscales.guardarDocumento(userId, req.body) });
 });
 
-app.post("/api/memoria/fiscal/:userId/:documentoId/estado", (req, res) => {
-  const data =
-    documentosFiscales.actualizarEstado(
-      req.params.userId,
-      req.params.documentoId,
-      req.body.estado
-    );
+app.post("/api/memoria/fiscal/:userId/:documentoId/estado", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const data = documentosFiscales.actualizarEstado(userId, req.params.documentoId, req.body?.estado);
   res.json({ ok: Boolean(data), data });
 });
 
-// =============================
-// ENDPOINT PRINCIPAL: CHAT
-// =============================
-
-app.post("/chat", async (req, res) => {
-
-  // 🧠 [MEMORIA_ORQUESTADOR - INPUT ENTRY POINT]
-  // Este es el punto donde el mensaje entra al sistema de memoria
-
-  try {
-    const { mensaje, userId, contexto } = req.body;
-
-    // -------------------------
-    // VALIDACIONES
-    // -------------------------
-
-    if (!mensaje || typeof mensaje !== "string") {
-      return res.status(400).json({
-        ok: false,
-        error: "Mensaje inválido"
-      });
-    }
-
-    // -------------------------
-    // CONTEXTO BASE
-    // -------------------------
-
-    const contextoBase = {
-      userId: userId || "anonimo",
-      timestamp: Date.now(),
-      ...contexto
-    };
-
-    // 🧠 [MEMORIA_ORQUESTADOR - CONTEXTO INICIAL]
-    // contextoBase será consumido por memoriaOrquestador dentro del flujo de orquestación
-
-    // -------------------------
-    // EJECUCIÓN DEL SISTEMA
-    // -------------------------
-
-    const resultado = await orquestadorChat(mensaje, contextoBase);
-
-    // 🧠 [MEMORIA_ORQUESTADOR - OUTPUT RETURN]
-    // resultado ya contiene respuesta + debug de memoria (si está activado)
-
-    // -------------------------
-    // RESPUESTA
-    // -------------------------
-
-    return res.status(200).json({
-      ok: true,
-      respuesta: resultado?.respuesta || "No hubo respuesta",
-      video: resultado?.video || null,
-      expresion: resultado?.expresion || null,
-      premium: resultado?.premium || null,
-
-      // 🧠 [MEMORIA_ORQUESTADOR - DEBUG LAYER]
-      debug: process.env.NODE_ENV === "development"
-        ? resultado?.debug || null
-        : undefined
-    });
-
-  } catch (error) {
-
-    console.error("❌ Error en /chat:", error);
-
-    return res.status(500).json({
-      ok: false,
-      error: "Error interno del servidor"
-    });
+app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
+  const { mensaje, userId, contexto } = req.body || {};
+  if (!mensaje || typeof mensaje !== "string") {
+    return res.status(400).json({ ok: false, error: "Mensaje inválido" });
   }
-});
 
-// =============================
-// 404 - RUTAS NO ENCONTRADAS
-// =============================
+  const effectiveUserId = req.auth?.userId || userId || "anonimo";
+  const resultado = await orquestadorChat(mensaje, {
+    userId: effectiveUserId,
+    timestamp: Date.now(),
+    ...contexto
+  });
+
+  if (req.auth) {
+    relojApi.guardarUltimaInteraccion(req.auth.userId);
+  }
+
+  return res.status(200).json({
+    ok: true,
+    respuesta: resultado?.respuesta || "No hubo respuesta",
+    video: resultado?.video || null,
+    expresion: resultado?.expresion || null,
+    premium: resultado?.premium || null,
+    debug: process.env.NODE_ENV === "development" ? resultado?.debug || null : undefined
+  });
+}));
 
 app.use((req, res) => {
-  res.status(404).json({
-    ok: false,
-    error: "Ruta no encontrada"
-
-    // 🧠 [MEMORIA_ORQUESTADOR]
-    // request fuera del sistema de conversación
-  });
+  res.status(404).json({ ok: false, error: "Ruta no encontrada" });
 });
 
-// =============================
-// MANEJO GLOBAL DE ERRORES
-// =============================
-
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
   console.error("💥 Error global:", err);
-
-  res.status(500).json({
+  res.status(err.status || 500).json({
     ok: false,
-    error: "Fallo inesperado del servidor"
-
-    // 🧠 [MEMORIA_ORQUESTADOR]
-    // error fuera del flujo cognitivo/memoria
+    error: err.message || "Fallo inesperado del servidor",
+    details: err.details || undefined
   });
 });
-
-// =============================
-// INICIO DEL SERVIDOR
-// =============================
 
 app.listen(PORT, () => {
   console.log(`🚀 JOI corriendo en http://localhost:${PORT}`);
-
-  // 🧠 [MEMORIA_ORQUESTADOR]
-  // sistema listo - memoria se activa dentro del orquestadorChat
-}); 
+});

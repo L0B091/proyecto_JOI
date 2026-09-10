@@ -1,10 +1,15 @@
 import storage from "../../utils/jsonStorage.js";
+import datosUsuario from "../../memoria/datosUsuario.js";
+import usuariosMemoria from "../../memoria/usuariosMemoria.js";
 
 const NAMESPACE = "premium";
 const PREMIUM_DIAS = 30;
-const PRECIO_MENSUAL_ARS = Number(process.env.PREMIUM_PRICE_ARS || 3000);
 
-const PLAN = {
+function obtenerPrecioPremium() {
+  return Number(process.env.PREMIUM_PRICE_ARS || 3000);
+}
+
+export const PLAN = {
   free: [
     "Conversación con IA",
     "APIs",
@@ -34,99 +39,103 @@ function obtenerRegistro(userId) {
 }
 
 function guardarRegistro(userId, data) {
-  storage.writeUserData(NAMESPACE, userId, data);
-  return data;
+  storage.writeUserData(NAMESPACE, userId, {
+    userId,
+    premiumHasta: data.premiumHasta || null,
+    historial: Array.isArray(data.historial) ? data.historial.slice(-50) : []
+  });
+}
+
+function sincronizarPlanUsuario(userId, premiumHasta = null) {
+  const plan = premiumHasta && new Date(premiumHasta).getTime() > Date.now() ? "premium" : "free";
+  datosUsuario.actualizar(userId, {
+    configuracion: {
+      plan
+    }
+  });
+
+  const authUser = usuariosMemoria.obtenerUsuarioPorId(userId);
+  if (authUser) {
+    usuariosMemoria.guardarUsuario(authUser.email, {
+      ...authUser,
+      premiumUntil: premiumHasta
+    });
+  }
 }
 
 function obtenerEstado(userId) {
   const registro = obtenerRegistro(userId);
-  const premiumHasta = registro.premiumHasta ? new Date(registro.premiumHasta).getTime() : 0;
-  const premiumActivo = premiumHasta > Date.now();
+  const premiumHastaMs = registro.premiumHasta ? new Date(registro.premiumHasta).getTime() : 0;
+  const premiumActivo = premiumHastaMs > Date.now();
+
+  if (!premiumActivo && registro.premiumHasta) {
+    sincronizarPlanUsuario(userId, null);
+  }
+
   return {
     userId,
     premiumActivo,
-    premiumHasta: registro.premiumHasta,
+    premiumHasta: premiumActivo ? registro.premiumHasta : null,
     plan: premiumActivo ? "premium" : "free",
     funciones: premiumActivo ? PLAN.premium : PLAN.free,
-    historial: registro.historial || []
+    historial: Array.isArray(registro.historial) ? registro.historial : []
   };
 }
 
 function explicarPlan(feature = "M/A") {
   return {
     feature,
-    precioARS: PRECIO_MENSUAL_ARS,
+    precioARS: obtenerPrecioPremium(),
     duracionDias: PREMIUM_DIAS,
     renovacionAutomatica: false,
-    mensaje: `Para usar ${feature}, JOI habilita Premium por ${PREMIUM_DIAS} días y genera un link de cobro por Mercado Pago. No se renueva automáticamente.`,
+    mensaje: `Para usar ${feature}, JOI habilita Premium por ${PREMIUM_DIAS} días mediante Mercado Pago. No se renueva automáticamente.`,
     free: PLAN.free,
     premium: PLAN.premium
   };
 }
 
-function generarLinkPago(userId, feature = "M/A") {
-  const paymentId = `mp_${storage.sanitizeId(userId)}_${Date.now()}`;
-  const baseUrl = process.env.MERCADO_PAGO_CHECKOUT_URL || "https://www.mercadopago.com.ar/";
-  const url = new URL(baseUrl);
-  url.searchParams.set("reference", paymentId);
-  url.searchParams.set("userId", userId);
-  url.searchParams.set("feature", feature);
-  url.searchParams.set("amount", String(PRECIO_MENSUAL_ARS));
-
+function registrarCheckout(userId, checkout = {}) {
   const registro = obtenerRegistro(userId);
   registro.historial = [
     ...(registro.historial || []),
     {
       tipo: "checkout_generado",
-      paymentId,
-      feature,
-      createdAt: new Date().toISOString(),
-      amountARS: PRECIO_MENSUAL_ARS
+      preferenceId: checkout.preferenceId || null,
+      feature: checkout.feature || "M/A",
+      amountARS: checkout.amountARS || obtenerPrecioPremium(),
+      initPoint: checkout.initPoint || null,
+      createdAt: new Date().toISOString()
     }
-  ].slice(-20);
+  ].slice(-50);
   guardarRegistro(userId, registro);
-
-  return {
-    paymentId,
-    url: url.toString(),
-    amountARS: PRECIO_MENSUAL_ARS,
-    feature,
-    modo: process.env.MERCADO_PAGO_ACCESS_TOKEN ? "configured" : "simulado"
-  };
+  return registro;
 }
 
-function verificarPago(userId, paymentId, status = "approved") {
-  const aprobado = String(status).toLowerCase() === "approved";
-  if (!aprobado) {
-    return {
-      ok: false,
-      premiumActivo: false,
-      paymentId,
-      status
-    };
-  }
-
-  const registro = obtenerRegistro(userId);
+function activarPremium(userId, paymentId, detail = {}) {
   const premiumHasta = new Date(Date.now() + PREMIUM_DIAS * 24 * 60 * 60 * 1000).toISOString();
+  const registro = obtenerRegistro(userId);
   registro.premiumHasta = premiumHasta;
   registro.historial = [
     ...(registro.historial || []),
     {
       tipo: "pago_aprobado",
       paymentId,
-      status,
+      preferenceId: detail.preferenceId || null,
+      feature: detail.feature || "M/A",
+      status: detail.status || "approved",
       premiumHasta,
       createdAt: new Date().toISOString()
     }
-  ].slice(-20);
+  ].slice(-50);
   guardarRegistro(userId, registro);
-
+  sincronizarPlanUsuario(userId, premiumHasta);
   return {
     ok: true,
     premiumActivo: true,
     premiumHasta,
     paymentId,
-    status
+    status: detail.status || "approved",
+    feature: detail.feature || "M/A"
   };
 }
 
@@ -134,6 +143,8 @@ export default {
   PLAN,
   explicarPlan,
   obtenerEstado,
-  generarLinkPago,
-  verificarPago
+  registrarCheckout,
+  activarPremium,
+  sincronizarPlanUsuario,
+  obtenerPrecioPremium
 };

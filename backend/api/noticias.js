@@ -1,59 +1,45 @@
-const FALLBACK_NEWS = [
-  {
-    titulo: "JOI mantiene un resumen local",
-    descripcion: "No hay API key de noticias configurada; se entrega un resumen de respaldo.",
-    link: null,
-    fecha: new Date().toISOString()
-  }
-];
+import HttpError from "../utils/httpError.js";
 
-async function obtenerNoticias(ciudad = "", categorias = []) {
-  const apiKey = process.env.NEWS_API_KEY || "";
+export async function obtenerNoticias(ciudad = "", categorias = []) {
+  const apiKey = String(process.env.NEWS_API_KEY || "").trim();
   if (!apiKey) {
-    return FALLBACK_NEWS.map(item => ({
-      ...item,
-      descripcion: ciudad
-        ? `${item.descripcion} Contexto consultado: ${ciudad}.`
-        : item.descripcion,
-      categorias
-    }));
+    throw new HttpError(503, "NEWS_API_KEY no está configurado");
   }
 
-  try {
-    const url = new URL("https://newsapi.org/v2/top-headlines");
-    url.searchParams.set("pageSize", "5");
-    url.searchParams.set("language", "es");
-    url.searchParams.set("country", "ar");
-    url.searchParams.set("apiKey", apiKey);
-    if (categorias.length > 0) {
-      url.searchParams.set("q", categorias.join(","));
-    } else if (ciudad) {
-      url.searchParams.set("q", ciudad);
-    }
+  const url = new URL("https://newsapi.org/v2/top-headlines");
+  url.searchParams.set("pageSize", "5");
+  url.searchParams.set("language", "es");
+  url.searchParams.set("country", "ar");
+  url.searchParams.set("apiKey", apiKey);
 
-    const respuesta = await fetch(url);
-    if (!respuesta.ok) {
-      throw new Error(`Error al obtener noticias: ${respuesta.status}`);
-    }
-
-    const data = await respuesta.json();
-    const articulos = Array.isArray(data?.articles) ? data.articles : [];
-
-    return articulos.map(articulo => ({
-      titulo: articulo.title,
-      descripcion: articulo.description,
-      link: articulo.url,
-      fecha: articulo.publishedAt
-    }));
-  } catch (error) {
-    console.error("Error en noticias.js:", error.message);
-    return FALLBACK_NEWS;
+  if (categorias.length > 0) {
+    url.searchParams.set("q", categorias.join(" "));
+  } else if (ciudad) {
+    url.searchParams.set("q", ciudad);
   }
+
+  const respuesta = await fetch(url);
+  const raw = await respuesta.text();
+  const data = raw ? JSON.parse(raw) : null;
+
+  if (!respuesta.ok || data?.status === "error") {
+    throw new HttpError(respuesta.status || 502, data?.message || "No se pudieron obtener noticias", data);
+  }
+
+  const articulos = Array.isArray(data?.articles) ? data.articles : [];
+  return articulos.map(articulo => ({
+    titulo: articulo.title,
+    descripcion: articulo.description,
+    link: articulo.url,
+    fecha: articulo.publishedAt,
+    fuente: articulo?.source?.name || null,
+    imagen: articulo.urlToImage || null
+  }));
 }
 
-function generarMensajePush(noticia) {
+export function generarMensajePush(noticia) {
   if (!noticia) return "";
-  return `${noticia.titulo}${noticia.descripcion ? " - " + noticia.descripcion : ""}`;
+  return `${noticia.titulo}${noticia.descripcion ? ` - ${noticia.descripcion}` : ""}`;
 }
 
 export default {
