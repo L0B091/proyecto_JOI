@@ -21,9 +21,11 @@ import personalidad from "../motor/personalidad.js";
 import estiloExpresivo from "../motor/estiloExpresivo.js";
 
 import { obtenerUsuario } from "../memoria/usuarioMemoria.js";
+import historialConversacion from "../memoria/historialConversacion.js";
 
 //  NUEVO: MEMORIA ORQUESTADOR
 import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
+import veniceClient from "../llm/veniceClient.js";
 
 async function orquestador(mensajeUsuario, contexto = {}) {
   let memoriaUsuario = null;
@@ -87,6 +89,43 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   const resultadoCognicion = await cognicion(mensajeUsuario, contextoCompleto);
 
   let respuesta = resultadoCognicion?.respuesta || "No pude generar una respuesta.";
+  let debugLLM = {
+    ...veniceClient.obtenerDiagnostico(),
+    used: false,
+    fallback: "motor_local"
+  };
+
+  try {
+    const resultadoLLM =
+      await veniceClient.generarRespuesta({
+        mensajeUsuario,
+        contexto: contextoCompleto,
+        respuestaBase: respuesta
+      });
+
+    if (resultadoLLM?.respuesta) {
+      respuesta = resultadoLLM.respuesta;
+      debugLLM = {
+        provider: resultadoLLM.provider,
+        model: resultadoLLM.model,
+        configured: resultadoLLM.configured,
+        used: resultadoLLM.used,
+        usage: resultadoLLM.usage || null
+      };
+    } else if (resultadoLLM?.reason) {
+      debugLLM = {
+        ...debugLLM,
+        configured: resultadoLLM.configured,
+        reason: resultadoLLM.reason
+      };
+    }
+  } catch (error) {
+    console.error("Error llamando a Venice:", error);
+    debugLLM = {
+      ...debugLLM,
+      error: error.message
+    };
+  }
 
   // =========================================================
   // [PERSONA] 5. PERSONALIDAD (QUIÉN LO DICE)
@@ -116,6 +155,14 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     respuesta = estiloExpresivo(respuesta, contextoCompleto);
   }
 
+  if (contexto.userId && respuesta) {
+    historialConversacion.registrarMensaje(
+      contexto.userId,
+      respuesta,
+      "joi"
+    );
+  }
+
   // =========================================================
   // [OUTPUT] 7. SALIDA FINAL
   // =========================================================
@@ -128,7 +175,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       memoriaUsuario,
 
       // NUEVO DEBUG COMPLETO
-      memoriaSistema
+      memoriaSistema,
+      llm: debugLLM
     }
   };
 }

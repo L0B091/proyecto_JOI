@@ -12,6 +12,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 import orquestadorChat from "./orquestador/orquestadorChat.js";
+import veniceClient from "./llm/veniceClient.js";
 
 // 🧠 [MEMORIA_ORQUESTADOR] (NO IMPORTADO AQUÍ DIRECTAMENTE)
 // Flujo de memoria se ejecuta dentro de orquestadorChat
@@ -56,6 +57,7 @@ app.get("/health", (req, res) => {
     servicio: "Joi Backend",
     estado: "activo",
     timestamp: new Date().toISOString(),
+    llm: veniceClient.obtenerDiagnostico(),
 
     // 🧠 [MEMORIA_ORQUESTADOR]
     // aquí no se ejecuta memoria, pero sirve para diagnóstico del sistema
