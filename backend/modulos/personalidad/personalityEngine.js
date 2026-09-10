@@ -188,8 +188,35 @@ function elegir(lista = []) {
   return lista[Math.floor(Math.random() * lista.length)];
 }
 
+function normalizarTextoBase(texto = "") {
+  return String(texto || "")
+    .replace(/[😉😊🙃😏🙂]/g, "")
+    .replace(/…/g, "")
+    .replace(/^che,\s*/i, "")
+    .trim();
+}
+
+function describirFoco(contexto = {}) {
+  const crudo =
+    contexto.memoriaSistema?.memoriaCorta?.foco ||
+    contexto.entradaProcesada?.intencion ||
+    "lo que me contás";
+  const foco = String(crudo).trim().toLowerCase();
+
+  if (!foco || ["ia", "general", "charla", "conversacion"].includes(foco)) {
+    return "lo que me contás";
+  }
+
+  if (foco === "desarrollo") {
+    return "tu app y cómo seguir avanzando";
+  }
+
+  return foco;
+}
+
 function enriquecerBase(respuesta = "", perfil, contexto = {}) {
-  const limpia = String(respuesta || "").trim();
+  const original = String(respuesta || "").trim();
+  const limpia = normalizarTextoBase(original);
   const genericas = new Set([
     "Puedo ayudarte con eso.",
     "Entiendo lo que decís.",
@@ -197,20 +224,17 @@ function enriquecerBase(respuesta = "", perfil, contexto = {}) {
   ]);
 
   if (!genericas.has(limpia)) {
-    return limpia;
+    return original;
   }
 
-  const foco =
-    contexto.memoriaSistema?.memoriaCorta?.foco ||
-    contexto.entradaProcesada?.intencion ||
-    "lo que me contás";
+  const foco = describirFoco(contexto);
 
   if (perfil.estadoGlobal?.estadoEmocional === "empatico") {
-    return `Estoy con vos. ${elegir(rasgosIdiosincraticos.atencionMatices.ejemplos)} Si querés, vemos juntos ${String(foco).toLowerCase()}.`;
+    return `Estoy con vos. ${elegir(rasgosIdiosincraticos.atencionMatices.ejemplos)} Si querés, vemos juntos ${foco}.`;
   }
 
   if (perfil.ejes?.C?.estado?.iniciativa === "alta") {
-    return `${elegir(vozDelPersonaje.naturalidad.ejemplos)} ${elegir(gustosPersonales.expresionNatural)} Contame un poco más sobre ${String(foco).toLowerCase()}.`;
+    return `${elegir(vozDelPersonaje.naturalidad.ejemplos)} ${elegir(gustosPersonales.expresionNatural)} Contame un poco más sobre ${foco}.`;
   }
 
   return `${elegir(vozDelPersonaje.naturalidad.ejemplos)} ${elegir(gustosPersonales.expresionNatural)}`;

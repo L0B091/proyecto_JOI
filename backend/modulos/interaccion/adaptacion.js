@@ -46,8 +46,14 @@ function adaptacion(mensaje, contexto = {}) {
   }
 
   // --- Adaptación según memoria reciente ---
-  if (memoriaReciente && memoriaReciente.ultimoTema) {
-    respuesta += ` Por cierto, seguimos hablando sobre ${memoriaReciente.ultimoTema}.`;
+  if (
+    memoriaReciente &&
+    memoriaReciente.ultimoTema &&
+    memoriaReciente.ultimoTema.length > 3 &&
+    !/\b(ia|general|tema)\b/i.test(memoriaReciente.ultimoTema) &&
+    !new RegExp(memoriaReciente.ultimoTema, "i").test(respuesta)
+  ) {
+    respuesta += ` Sigo teniendo presente lo de ${memoriaReciente.ultimoTema}.`;
   }
 
   return respuesta;

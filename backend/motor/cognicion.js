@@ -130,11 +130,11 @@ async function cognicion(mensajeUsuario, contexto = {}) {
   // =========================================================
 
   if (memoriaCorta?.intencionDetectada === "desarrollo") {
-    respuesta += " (lo estoy analizando dentro de tu contexto de proyecto)";
+    respuesta += " Voy siguiéndote dentro del contexto de tu proyecto.";
   }
 
-  if (hayRecuerdos) {
-    respuesta += " (tengo contexto previo relevante)";
+  if (hayRecuerdos && !/venimos|antes|siguiendo|contexto/i.test(respuesta)) {
+    respuesta += " Tengo presente lo que ya fuimos viendo.";
   }
 
   // =========================================================
