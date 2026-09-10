@@ -79,9 +79,8 @@ function obtener(usuarioId) {
     return memoria;
   } catch (error) {
     console.error(
-      "[memoriaPersistente] Error leyendo memoria de " +
-      usuarioId +
-      ":",
+      "[memoriaPersistente] Error leyendo memoria de usuario:",
+      { usuarioId },
       error
     );
 
@@ -117,9 +116,8 @@ function guardar(usuarioId, memoria) {
     return true;
   } catch (error) {
     console.error(
-      "[memoriaPersistente] Error guardando memoria de " +
-      usuarioId +
-      ":",
+      "[memoriaPersistente] Error guardando memoria de usuario:",
+      { usuarioId },
       error
     );
 

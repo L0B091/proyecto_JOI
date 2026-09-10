@@ -15,6 +15,12 @@ function getAccessToken() {
 
 async function mercadoPagoRequest(path, options = {}) {
   const accessToken = getAccessToken();
+  const allowed = /^\/(checkout\/preferences|v1\/payments\/[A-Za-z0-9_-]+)$/;
+
+  if (!allowed.test(path)) {
+    throw new HttpError(400, "Ruta de Mercado Pago inválida");
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {

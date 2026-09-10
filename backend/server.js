@@ -19,11 +19,16 @@ import login from "./auth/login.js";
 import { optionalAuth, requireAuth } from "./auth/authMiddleware.js";
 import bitacoraManager from "./modulos/bitacora/bitacoraManager.js";
 import datosUsuario from "./memoria/datosUsuario.js";
+import { createRateLimit } from "./utils/rateLimit.js";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const authRateLimit = createRateLimit({
+  windowMs: 60_000,
+  max: 10
+});
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -73,7 +78,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-app.post("/api/auth/register", handleAsync(async (req, res) => {
+app.post("/api/auth/register", authRateLimit, handleAsync(async (req, res) => {
   const { email, password, displayName } = req.body || {};
   const resultado = login.registrarUsuario(email, password, { displayName });
   if (!resultado.ok) {
@@ -93,7 +98,7 @@ app.post("/api/auth/register", handleAsync(async (req, res) => {
   return res.status(201).json({ ok: true, ...resultado });
 }));
 
-app.post("/api/auth/login", handleAsync(async (req, res) => {
+app.post("/api/auth/login", authRateLimit, handleAsync(async (req, res) => {
   const { email, password } = req.body || {};
   const resultado = login.loginUsuario(email, password);
   if (!resultado.ok) {
@@ -102,7 +107,7 @@ app.post("/api/auth/login", handleAsync(async (req, res) => {
   return res.json({ ok: true, ...resultado });
 }));
 
-app.post("/api/auth/google", handleAsync(async (req, res) => {
+app.post("/api/auth/google", authRateLimit, handleAsync(async (req, res) => {
   const { idToken } = req.body || {};
   const resultado = await googleAuth.autenticarConGoogle(idToken);
   return res.status(200).json({ ok: true, ...resultado });
