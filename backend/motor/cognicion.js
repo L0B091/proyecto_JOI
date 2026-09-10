@@ -23,16 +23,22 @@ async function cognicion(mensajeUsuario, contexto = {}) {
 
   const memoriaCorta = memoriaSistema?.memoriaCorta;
   const memoriaSelectiva = memoriaSistema?.memoriaSelectiva;
-  const recuerdosImportantes = memoriaSistema?.recuerdosImportantes;
+  const recuerdosImportantes =
+    memoriaSistema?.recuerdosImportantes;
   const datosUsuario = memoriaSistema?.datosUsuario;
 
   const ctx = {
-    tipoInteraccion: entrada.tipoInteraccion || "neutral",
-    energiaUsuario: entrada.energiaUsuario || "media",
-    emocionDetectada: entrada.emocionDetectada || "neutral",
+    tipoInteraccion:
+      entrada.calibracion?.tipoInteraccion ||
+      entrada.intencion ||
+      "neutral",
+    energiaUsuario:
+      entrada.calibracion?.energia || "media",
+    emocionDetectada:
+      entrada.emocion || "neutral",
     estadoEmocional:
       contexto.estadoEmocional ||
-      entrada.emocionDetectada ||
+      entrada.emocion ||
       "neutral",
 
     //  NUEVO: INYECCIÓN DE MEMORIA
@@ -62,7 +68,9 @@ async function cognicion(mensajeUsuario, contexto = {}) {
   //  NUEVO: CONTEXTO COGNITIVO DE MEMORIA
   // =========================================================
 
-  const focoMemoria = memoriaCorta?.foco || "general";
+  const focoMemoria =
+   String(memoriaCorta?.foco || "general")
+     .toLowerCase();
   const hayRecuerdos = recuerdosImportantes
     ? Object.keys(recuerdosImportantes).length > 0
     : false;
@@ -121,7 +129,7 @@ async function cognicion(mensajeUsuario, contexto = {}) {
   //  NUEVO: ENRIQUECER RESPUESTA CON MEMORIA
   // =========================================================
 
-  if (memoriaCorta?.intencionDetectada === "proyecto") {
+  if (memoriaCorta?.intencionDetectada === "desarrollo") {
     respuesta += " (lo estoy analizando dentro de tu contexto de proyecto)";
   }
 

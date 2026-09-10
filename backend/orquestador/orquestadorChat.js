@@ -26,17 +26,6 @@ import { obtenerUsuario } from "../memoria/usuarioMemoria.js";
 import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
 
 async function orquestador(mensajeUsuario, contexto = {}) {
-
-  // =========================================================
-  // [ENTRY] 1. ENTRADA
-  // =========================================================
-
-  const entradaProcesada = await procesadorEntrada(mensajeUsuario, contexto);
-
-  // =========================================================
-  // [MEMORY] 2. MEMORIA (USUARIO BASE)
-  // =========================================================
-
   let memoriaUsuario = null;
 
   if (contexto.userId) {
@@ -46,6 +35,21 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       memoriaUsuario = null;
     }
   }
+
+  // =========================================================
+  // [ENTRY] 1. ENTRADA
+  // =========================================================
+
+  const entradaProcesada =
+    procesadorEntrada.procesarEntrada(
+      contexto.userId || "anonimo",
+      mensajeUsuario,
+      memoriaUsuario?.historialConversacion || []
+    );
+
+  // =========================================================
+  // [MEMORY] 2. MEMORIA (USUARIO BASE)
+  // =========================================================
 
   // NUEVO: MEMORIA COGNITIVA COMPLETA
   let memoriaSistema = null;
@@ -88,8 +92,20 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // [PERSONA] 5. PERSONALIDAD (QUIÉN LO DICE)
   // =========================================================
 
-  if (typeof personalidad === "function") {
-    respuesta = personalidad(respuesta, contextoCompleto);
+  if (
+    personalidad &&
+    typeof personalidad.decidirComportamiento === "function"
+  ) {
+    const decisionPersonalidad =
+      personalidad.decidirComportamiento({
+        mensajeUsuario,
+        estado: contexto.estado || {}
+      });
+
+    if (decisionPersonalidad?.estado) {
+      contextoCompleto.estado =
+        decisionPersonalidad.estado;
+    }
   }
 
   // =========================================================

@@ -131,28 +131,16 @@ async function ejecutar({
   // =========================================================
 
   return {
-    contexto: {
-      actual: {
-        memoriaCorta:
-          memoriaCortaActiva,
-
-        memoriaSelectiva:
-          memoriaSelectivaActiva
-      },
-
-      conocimiento: {
-        memoriaPersistente:
-          memoriaPersistenteActual,
-
-        recuerdosImportantes:
-          recuerdosActuales
-      }
-    },
-
+    memoriaCorta:
+      memoriaCortaActiva,
+    memoriaSelectiva:
+      memoriaSelectivaActiva,
+    memoriaPersistente:
+      memoriaPersistenteActual,
+    recuerdosImportantes:
+      recuerdosActuales,
     actividad,
-
     datosUsuario: perfil,
-
     meta: {
       userId,
       timestamp

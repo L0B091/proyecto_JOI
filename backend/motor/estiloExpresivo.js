@@ -54,7 +54,7 @@ function insertarNombreControlado(texto, nombre, historial = {}) {
   if (Math.random() > prob) return texto;
   if (historial.nombreReciente) return texto;
   historial.nombreReciente = true;
-  return "${nombre}, ${texto}";
+  return `${nombre}, ${texto}`;
 }
 
 // VARIACIONES HUMANAS ADICIONALES
