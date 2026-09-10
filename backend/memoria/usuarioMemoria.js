@@ -1,13 +1,18 @@
 // memoria/usuarioMemoria.js
 
-const usuariosMemoria = {};
+const usuariosMemoria = new Map();
+
+function normalizarUsuarioId(usuarioId) {
+  return String(usuarioId || "anonimo");
+}
 
 // =========================
 // CREAR USUARIO
 // =========================
 export function registrarUsuario(usuarioId) {
-  if (!usuariosMemoria[usuarioId]) {
-    usuariosMemoria[usuarioId] = {
+  const id = normalizarUsuarioId(usuarioId);
+  if (!usuariosMemoria.has(id)) {
+    usuariosMemoria.set(id, {
       memoriaCorta: {},
       memoriaPersistente: {},
       recuerdosImportantes: {},
@@ -22,7 +27,7 @@ export function registrarUsuario(usuarioId) {
         estilo: "neutral",
         usaPreguntas: false
       }
-    };
+    });
   }
 }
 
@@ -30,94 +35,105 @@ export function registrarUsuario(usuarioId) {
 // OBTENER USUARIO
 // =========================
 export function obtenerUsuario(usuarioId) {
-  return usuariosMemoria[usuarioId] ?? null;
+  return usuariosMemoria.get(normalizarUsuarioId(usuarioId)) ?? null;
 }
 
 // =========================
 // AGREGAR MENSAJE AL HISTORIAL
 // =========================
 export function agregarMensaje(usuarioId, mensaje) {
-  registrarUsuario(usuarioId);
+  const id = normalizarUsuarioId(usuarioId);
+  registrarUsuario(id);
 
-  usuariosMemoria[usuarioId].historialConversacion.push({
+  usuariosMemoria.get(id).historialConversacion.push({
     mensaje,
     timestamp: Date.now()
   });
 
   // limitar historial (evita crecimiento infinito)
-  if (usuariosMemoria[usuarioId].historialConversacion.length > 50) {
-    usuariosMemoria[usuarioId].historialConversacion.shift();
+  if (usuariosMemoria.get(id).historialConversacion.length > 50) {
+    usuariosMemoria.get(id).historialConversacion.shift();
   }
 
-  usuariosMemoria[usuarioId].ultimaInteraccion = Date.now();
+  usuariosMemoria.get(id).ultimaInteraccion = Date.now();
 }
 
 // =========================
 // LISTAR USUARIOS
 // =========================
 export function listarUsuarios() {
-  return Object.keys(usuariosMemoria);
+  return Array.from(usuariosMemoria.keys());
 }
 
 // =========================
 // LIMPIAR USUARIO
 // =========================
 export function limpiarUsuario(usuarioId) {
-  if (usuariosMemoria[usuarioId]) {
-    usuariosMemoria[usuarioId].memoriaCorta = {};
-    usuariosMemoria[usuarioId].memoriaPersistente = {};
-    usuariosMemoria[usuarioId].recuerdosImportantes = {};
-    usuariosMemoria[usuarioId].historialConversacion = [];
-    usuariosMemoria[usuarioId].ultimaInteraccion = null;
-    usuariosMemoria[usuarioId].ultimoMicro = null;
-    usuariosMemoria[usuarioId].ultimoMicroReaccion = null;
-    usuariosMemoria[usuarioId].estadoEmocionalActual = "neutral";
-    usuariosMemoria[usuarioId].historialEmocional = [];
+  const id = normalizarUsuarioId(usuarioId);
+  const usuario = usuariosMemoria.get(id);
+  if (usuario) {
+    usuario.memoriaCorta = {};
+    usuario.memoriaPersistente = {};
+    usuario.recuerdosImportantes = {};
+    usuario.historialConversacion = [];
+    usuario.ultimaInteraccion = null;
+    usuario.ultimoMicro = null;
+    usuario.ultimoMicroReaccion = null;
+    usuario.estadoEmocionalActual = "neutral";
+    usuario.historialEmocional = [];
   }
 }
 
 export function guardarUltimoMicro(usuarioId, valor) {
-  registrarUsuario(usuarioId);
-  usuariosMemoria[usuarioId].ultimoMicro = valor;
+  const id = normalizarUsuarioId(usuarioId);
+  registrarUsuario(id);
+  usuariosMemoria.get(id).ultimoMicro = valor;
   return valor;
 }
 
 export function obtenerUltimoMicro(usuarioId) {
-  registrarUsuario(usuarioId);
-  return usuariosMemoria[usuarioId].ultimoMicro ?? null;
+  const id = normalizarUsuarioId(usuarioId);
+  registrarUsuario(id);
+  return usuariosMemoria.get(id).ultimoMicro ?? null;
 }
 
 export function guardarUltimoMicroReaccion(usuarioId, valor) {
-  registrarUsuario(usuarioId);
-  usuariosMemoria[usuarioId].ultimoMicroReaccion = valor;
+  const id = normalizarUsuarioId(usuarioId);
+  registrarUsuario(id);
+  usuariosMemoria.get(id).ultimoMicroReaccion = valor;
   return valor;
 }
 
 export function obtenerUltimoMicroReaccion(usuarioId) {
-  registrarUsuario(usuarioId);
-  return usuariosMemoria[usuarioId].ultimoMicroReaccion ?? null;
+  const id = normalizarUsuarioId(usuarioId);
+  registrarUsuario(id);
+  return usuariosMemoria.get(id).ultimoMicroReaccion ?? null;
 }
 
 export function actualizarEstadoEmocional(usuarioId, estado) {
-  registrarUsuario(usuarioId);
-  usuariosMemoria[usuarioId].estadoEmocionalActual = estado || "neutral";
-  usuariosMemoria[usuarioId].historialEmocional.push({
-    estado: usuariosMemoria[usuarioId].estadoEmocionalActual,
+  const id = normalizarUsuarioId(usuarioId);
+  registrarUsuario(id);
+  const usuario = usuariosMemoria.get(id);
+  usuario.estadoEmocionalActual = estado || "neutral";
+  usuario.historialEmocional.push({
+    estado: usuario.estadoEmocionalActual,
     timestamp: Date.now()
   });
-  usuariosMemoria[usuarioId].historialEmocional =
-    usuariosMemoria[usuarioId].historialEmocional.slice(-20);
-  return usuariosMemoria[usuarioId].estadoEmocionalActual;
+  usuario.historialEmocional =
+    usuario.historialEmocional.slice(-20);
+  return usuario.estadoEmocionalActual;
 }
 
 export function actualizarPreferenciasComunicacion(
   usuarioId,
   preferencias = {}
 ) {
-  registrarUsuario(usuarioId);
-  usuariosMemoria[usuarioId].preferenciasComunicacion = {
-    ...usuariosMemoria[usuarioId].preferenciasComunicacion,
+  const id = normalizarUsuarioId(usuarioId);
+  registrarUsuario(id);
+  const usuario = usuariosMemoria.get(id);
+  usuario.preferenciasComunicacion = {
+    ...usuario.preferenciasComunicacion,
     ...preferencias
   };
-  return usuariosMemoria[usuarioId].preferenciasComunicacion;
+  return usuario.preferenciasComunicacion;
 }

@@ -51,7 +51,9 @@ function adaptacion(mensaje, contexto = {}) {
     memoriaReciente.ultimoTema &&
     memoriaReciente.ultimoTema.length > 3 &&
     !/\b(ia|general|tema)\b/i.test(memoriaReciente.ultimoTema) &&
-    !new RegExp(memoriaReciente.ultimoTema, "i").test(respuesta)
+    !respuesta.toLowerCase().includes(
+      String(memoriaReciente.ultimoTema).toLowerCase()
+    )
   ) {
     respuesta += ` Sigo teniendo presente lo de ${memoriaReciente.ultimoTema}.`;
   }
