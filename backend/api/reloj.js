@@ -5,7 +5,7 @@
 import horaAPI from './hora.js'; // opcional, para usar la función de hora y fecha
 
 // Memoria interna para almacenar la última interacción de cada usuario
-const memoriaUsuarios = {};
+const memoriaUsuarios = new Map();
 
 /**
 * Obtiene la hora y fecha actual usando horaAPI o directamente
@@ -23,8 +23,10 @@ function obtenerHoraActual(zonaHoraria = Intl.DateTimeFormat().resolvedOptions()
 */
 function guardarUltimaInteraccion(usuarioID) {
   const ahora = new Date();
-  if (!memoriaUsuarios[usuarioID]) memoriaUsuarios[usuarioID] = {};
-  memoriaUsuarios[usuarioID].ultimaInteraccion = ahora;
+  const userKey = String(usuarioID || "anonimo");
+  memoriaUsuarios.set(userKey, {
+    ultimaInteraccion: ahora
+  });
 }
 
 /**
@@ -33,7 +35,9 @@ function guardarUltimaInteraccion(usuarioID) {
 * @returns {number|null} minutos desde última interacción, o null si no hay registro
 */
 function tiempoDesdeUltimaInteraccion(usuarioID) {
-  const usuario = memoriaUsuarios[usuarioID];
+  const usuario = memoriaUsuarios.get(
+    String(usuarioID || "anonimo")
+  );
   if (!usuario || !usuario.ultimaInteraccion) return null;
   const ahora = new Date();
   const diferenciaMs = ahora - new Date(usuario.ultimaInteraccion);
