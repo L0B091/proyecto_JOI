@@ -22,10 +22,16 @@ import estiloExpresivo from "../motor/estiloExpresivo.js";
 
 import { obtenerUsuario } from "../memoria/usuarioMemoria.js";
 import historialConversacion from "../memoria/historialConversacion.js";
+import writeBackEngine from "../memoria/writebackengine.js";
+import codigoMemoria from "../memoria/codigoMemoria.js";
+import documentosFiscales from "../memoria/documentosFiscales.js";
 
 //  NUEVO: MEMORIA ORQUESTADOR
 import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
 import veniceClient from "../llm/veniceClient.js";
+import premiumManager from "../modulos/premium/premiumManager.js";
+import expresionFinal from "../modulos/expresion/expresionFinal.js";
+import selectorVideo from "../modulos/video/selectorVideo.js";
 
 async function orquestador(mensajeUsuario, contexto = {}) {
   let memoriaUsuario = null;
@@ -79,8 +85,38 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     memoriaUsuario,
 
     //  NUEVO: CONTEXTO COGNITIVO COMPLETO
-    memoriaSistema
+    memoriaSistema,
+    memoriaEspecializada: {
+      codigoReciente: contexto.userId
+        ? codigoMemoria.contextoBreve(contexto.userId, 5)
+        : [],
+      documentosFiscales: contexto.userId
+        ? documentosFiscales.resumen(contexto.userId)
+        : null,
+      premium: contexto.userId
+        ? premiumManager.obtenerEstado(contexto.userId)
+        : null
+    }
   };
+
+  let debugMemoriaEscritura = null;
+
+  if (contexto.userId) {
+    try {
+      debugMemoriaEscritura =
+        writeBackEngine.evaluarWriteBack({
+          userId: contexto.userId,
+          mensaje: mensajeUsuario,
+          entradaProcesada
+        });
+    } catch (error) {
+      console.error("Error en writeBackEngine:", error);
+      debugMemoriaEscritura = {
+        guardado: false,
+        error: error.message
+      };
+    }
+  }
 
   // =========================================================
   // [COGNITION] 4. COGNICIÓN (DECISIÓN CENTRAL)
@@ -155,6 +191,19 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     respuesta = estiloExpresivo(respuesta, contextoCompleto);
   }
 
+  const expresion =
+    expresionFinal.aplicarExpresionFinal(
+      respuesta,
+      contextoCompleto
+    );
+  respuesta = expresion.mensaje;
+
+  const video =
+    selectorVideo.seleccionarVideo(
+      contextoCompleto,
+      expresion.metadata
+    );
+
   if (contexto.userId && respuesta) {
     historialConversacion.registrarMensaje(
       contexto.userId,
@@ -169,6 +218,9 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   return {
     respuesta,
+    expresion: expresion.metadata,
+    video,
+    premium: contextoCompleto.memoriaEspecializada.premium,
     debug: {
       entradaProcesada,
       cognicion: resultadoCognicion,
@@ -176,6 +228,10 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
       // NUEVO DEBUG COMPLETO
       memoriaSistema,
+      memoriaEspecializada:
+        contextoCompleto.memoriaEspecializada,
+      memoriaEscritura:
+        debugMemoriaEscritura,
       llm: debugLLM
     }
   };

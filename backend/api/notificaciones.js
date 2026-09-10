@@ -1,66 +1,56 @@
-// backend/apis/notificaciones.js
-// Módulo para enviar notificaciones push de Joi
+import storage from "../utils/jsonStorage.js";
 
-/**
-* Envía una notificación push al usuario
-* @param {string} usuarioID
-* @param {string} titulo
-* @param {string} mensaje
-* @param {string} tipo - "alta", "media", "baja"
-*/
+const NAMESPACE = "notificaciones";
+
 function enviarNotificacion(usuarioID, titulo, mensaje, tipo = "media") {
-  // Aquí iría la integración con la librería de push de tu plataforma (Firebase, OneSignal, etc.)
-  console.log(`[Notificación ${tipo.toUpperCase()}] Para ${usuarioID}: ${titulo} - ${mensaje}`);
+  const notificaciones = storage.readUserData(NAMESPACE, usuarioID, []);
+  const registro = {
+    id: `${usuarioID}_${Date.now()}`,
+    titulo,
+    mensaje,
+    tipo,
+    leida: false,
+    createdAt: new Date().toISOString()
+  };
+  notificaciones.push(registro);
+  storage.writeUserData(NAMESPACE, usuarioID, notificaciones.slice(-100));
+  return registro;
 }
 
-/**
-* Notificación de buenos días
-* @param {string} usuarioID
-* @param {string} mensajeCorto - mensaje resumido (ej: clima)
-*/
+function listarNotificaciones(usuarioID) {
+  return storage.readUserData(NAMESPACE, usuarioID, []);
+}
+
+function marcarLeida(usuarioID, notificationId) {
+  const notificaciones = listarNotificaciones(usuarioID).map(item => (
+    item.id === notificationId ? { ...item, leida: true, leidaEn: new Date().toISOString() } : item
+  ));
+  storage.writeUserData(NAMESPACE, usuarioID, notificaciones);
+  return notificaciones.find(item => item.id === notificationId) || null;
+}
+
 function notificarBuenosDias(usuarioID, mensajeCorto) {
-  const titulo = "¡Buenos días!";
-  const mensaje = mensajeCorto || "Que tengas un gran día.";
-  enviarNotificacion(usuarioID, titulo, mensaje, "alta");
+  return enviarNotificacion(usuarioID, "¡Buenos días!", mensajeCorto || "Que tengas un gran día.", "alta");
 }
 
-/**
-* Notificación de recordatorio de calendario
-* @param {string} usuarioID
-* @param {string} evento - nombre del evento o nota
-* @param {Date} fecha - fecha del evento
-*/
 function notificarRecordatorio(usuarioID, evento, fecha) {
-  const titulo = "Recordatorio de Joi";
-  const mensaje = `No olvides: ${evento} el ${fecha.toLocaleString()}`;
-  enviarNotificacion(usuarioID, titulo, mensaje, "alta");
+  return enviarNotificacion(usuarioID, "Recordatorio de Joi", `No olvides: ${evento} el ${new Date(fecha).toLocaleString()}`, "alta");
 }
 
-/**
-* Notificación de noticias o alertas durante el día
-* @param {string} usuarioID
-* @param {string} noticia
-*/
 function notificarNoticias(usuarioID, noticia) {
-  const titulo = "Joi te informa";
-  const mensaje = noticia;
-  enviarNotificacion(usuarioID, titulo, mensaje, "baja");
+  return enviarNotificacion(usuarioID, "Joi te informa", noticia, "baja");
 }
 
-/**
-* Notificación de alarma / despertador
-* @param {string} usuarioID
-* @param {string} mensaje
-*/
 function notificarAlarma(usuarioID, mensaje) {
-  const titulo = "Hora de despertar";
-  enviarNotificacion(usuarioID, titulo, mensaje, "alta");
+  return enviarNotificacion(usuarioID, "Hora de despertar", mensaje, "alta");
 }
 
 export default {
   enviarNotificacion,
+  listarNotificaciones,
+  marcarLeida,
   notificarBuenosDias,
   notificarRecordatorio,
   notificarNoticias,
   notificarAlarma
-}; 
+};

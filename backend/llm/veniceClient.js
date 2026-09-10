@@ -94,6 +94,8 @@ function construirContextoInterno({
     resumirRecuerdos(
       memoriaSistema.recuerdosImportantes
     );
+  const memoriaEspecializada =
+    contexto.memoriaEspecializada || {};
 
   const lineas = [
     "Contexto interno de Joi:",
@@ -152,6 +154,41 @@ function construirContextoInterno({
     lineas.push(
       "recuerdos_relevantes: " +
       recuerdos.join(" | ")
+    );
+  }
+
+  if (
+    Array.isArray(
+      memoriaEspecializada.codigoReciente
+    ) &&
+    memoriaEspecializada.codigoReciente.length > 0
+  ) {
+    lineas.push(
+      "archivos_codigo_recientes: " +
+      memoriaEspecializada.codigoReciente
+        .map(function (item) {
+          return [
+            item.nombre,
+            item.ruta,
+            item.lenguaje,
+            item.resumen
+          ]
+            .filter(Boolean)
+            .join(" / ");
+        })
+        .join(" | ")
+    );
+  }
+
+  if (
+    memoriaEspecializada.documentosFiscales
+      ?.totalDocumentos
+  ) {
+    lineas.push(
+      "resumen_documentos_fiscales: " +
+      JSON.stringify(
+        memoriaEspecializada.documentosFiscales
+      )
     );
   }
 

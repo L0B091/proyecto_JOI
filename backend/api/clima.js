@@ -1,58 +1,56 @@
-// backend/apis/clima.js
-// Módulo para obtener información del clima y preparar mensaje breve para Joi
+const OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather";
 
-import fetch from 'node-fetch';
-
-/**
-* Obtiene el clima para unas coordenadas dadas
-* @param {number} lat - Latitud
-* @param {number} lon - Longitud
-* @returns {Promise<{temperatura: number|null, descripcion: string|null, mensajeCorto: string}>}
-*/
-async function obtenerClima(lat, lon) {
-  try {
-    const API_KEY = 'TU_API_KEY_AQUI'; // reemplazar con tu clave de OpenWeather
-    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=es`;
-
-    const respuesta = await fetch(url);
-    if (!respuesta.ok) {
-      throw new Error(`Error al obtener clima: ${respuesta.statusText}`);
-    }
-
-    const data = await respuesta.json();
-
-    const temperatura = data?.main?.temp ?? null;
-    const descripcion = data?.weather?.[0]?.description ?? null;
-
-    const mensajeCorto = generarMensajeCorto(temperatura, descripcion);
-
-    return { temperatura, descripcion, mensajeCorto };
-
-  } catch (error) {
-    console.error(`Error en clima.js: ${error.message}`);
-    return {
-      temperatura: null,
-      descripcion: null,
-      mensajeCorto: 'No se pudo obtener el clima hoy.'
-    };
-  }
+function fallbackClima(lat, lon) {
+  return {
+    temperatura: 21,
+    descripcion: "clima estable",
+    mensajeCorto: `No tengo acceso al clima en tiempo real, pero mantengo una referencia suave para ${lat}, ${lon}.`
+  };
 }
 
-/**
-* Genera un mensaje breve estilo Joi para notificación de buenos días
-* @param {number|null} temp - temperatura
-* @param {string|null} desc - descripción del clima
-* @returns {string}
-*/
 function generarMensajeCorto(temp, desc) {
-  let mensaje = 'Que tengas un buen día.';
+  let mensaje = "Que tengas un buen día.";
   if (temp !== null) {
-    if (temp <= 10) mensaje += ' Lleva abrigo, hoy hace frío.';
-    else if (temp >= 25) mensaje += ' Hace calor, hidrátate.';
-    else mensaje += ' El clima está agradable hoy.';
+    if (temp <= 10) mensaje += " Lleva abrigo, hoy hace frío.";
+    else if (temp >= 25) mensaje += " Hace calor, hidratate.";
+    else mensaje += " El clima está agradable hoy.";
   }
   if (desc) mensaje += ` (${desc})`;
   return mensaje;
 }
 
-export default obtenerClima; 
+async function obtenerClima(lat = -34.6037, lon = -58.3816) {
+  const apiKey = process.env.OPENWEATHER_API_KEY || "";
+
+  if (!apiKey) {
+    return fallbackClima(lat, lon);
+  }
+
+  try {
+    const url = new URL(OPENWEATHER_URL);
+    url.searchParams.set("lat", String(lat));
+    url.searchParams.set("lon", String(lon));
+    url.searchParams.set("appid", apiKey);
+    url.searchParams.set("units", "metric");
+    url.searchParams.set("lang", "es");
+
+    const respuesta = await fetch(url);
+    if (!respuesta.ok) {
+      throw new Error(`Error al obtener clima: ${respuesta.status}`);
+    }
+
+    const data = await respuesta.json();
+    const temperatura = data?.main?.temp ?? null;
+    const descripcion = data?.weather?.[0]?.description ?? null;
+    return {
+      temperatura,
+      descripcion,
+      mensajeCorto: generarMensajeCorto(temperatura, descripcion)
+    };
+  } catch (error) {
+    console.error("Error en clima.js:", error.message);
+    return fallbackClima(lat, lon);
+  }
+}
+
+export default obtenerClima;
