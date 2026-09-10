@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { rateLimit } from "express-rate-limit";
 
 import orquestadorChat from "./orquestador/orquestadorChat.js";
 import veniceClient from "./llm/veniceClient.js";
@@ -19,15 +20,22 @@ import login from "./auth/login.js";
 import { optionalAuth, requireAuth } from "./auth/authMiddleware.js";
 import bitacoraManager from "./modulos/bitacora/bitacoraManager.js";
 import datosUsuario from "./memoria/datosUsuario.js";
-import { createRateLimit } from "./utils/rateLimit.js";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const authRateLimit = createRateLimit({
-  windowMs: 60_000,
-  max: 10
+const authRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+const healthRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 app.use(cors());
@@ -67,7 +75,7 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/health", (req, res) => {
+app.get("/health", healthRateLimit, (req, res) => {
   res.status(200).json({
     ok: true,
     servicio: "Joi Backend",
