@@ -5,7 +5,7 @@
 // -----------------------------
 // Importaciones internas
 // -----------------------------
-import memoria from '../memoria/usuariosMemoria.js';
+import * as memoria from "../memoria/usuarioMemoria.js";
 import controlSeguridad from './controlAvanzadoYseguridad.js';
 import estiloExpresivo from './estiloExpresivo.js';
 import ritmoConversacional from './ritmoConversacional.js';

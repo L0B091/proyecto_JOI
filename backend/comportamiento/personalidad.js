@@ -2,7 +2,8 @@
 // Personalidad extendida de Joi con microreacciones y videos de uso natural
 // 80+ clips categorizados y etiquetados para coherencia visual y expresiva
 
-import estiloExpresivo from '../comportamiento/estiloExpresivo.js';
+import estiloExpresivo from "./estiloExpresivo.js";
+import * as memoria from "../memoria/usuarioMemoria.js";
 
 const PersonalidadJoi = {
   // Nombre y descripción

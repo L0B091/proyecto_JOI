@@ -1,4 +1,8 @@
 function detectarRitmo(contexto = {}) {
+  const ritmoPersona =
+    contexto.personalidad?.ritmo?.tipoRespuesta;
+  if (ritmoPersona === "rapido") return "dinamico";
+  if (ritmoPersona === "lento") return "suave";
   const energia = contexto.entradaProcesada?.calibracion?.energia || "media";
   if (energia === "alta") return "dinamico";
   if (energia === "baja") return "suave";
@@ -6,6 +10,11 @@ function detectarRitmo(contexto = {}) {
 }
 
 function detectarTono(contexto = {}) {
+  const tonoPersona =
+    contexto.personalidad?.ejes?.A?.estado?.tono;
+  if (tonoPersona === "ligero") return "alegre";
+  if (tonoPersona === "calma_suave") return "empatico";
+  if (tonoPersona === "intimo_gradual") return "calido";
   const emocion = contexto.entradaProcesada?.emocion || "neutral";
   const tipo = contexto.entradaProcesada?.intencion || "comentario";
   if (emocion === "triste") return "empatico";
@@ -47,7 +56,12 @@ function aplicarExpresionFinal(respuesta = "", contexto = {}) {
       tono,
       ritmo,
       microexpresion,
-      intensidad: contexto.memoriaSistema?.memoriaCorta?.intencionDetectada === "desarrollo" ? "media" : "suave"
+      intensidad:
+        contexto.personalidad?.ejes?.A?.nivel >= 4
+          ? "media"
+          : contexto.memoriaSistema?.memoriaCorta?.intencionDetectada === "desarrollo"
+            ? "media"
+            : "suave"
     }
   };
 }

@@ -96,6 +96,7 @@ function construirContextoInterno({
     );
   const memoriaEspecializada =
     contexto.memoriaEspecializada || {};
+  const personalidad = contexto.personalidad || {};
 
   const lineas = [
     "Contexto interno de Joi:",
@@ -189,6 +190,35 @@ function construirContextoInterno({
       JSON.stringify(
         memoriaEspecializada.documentosFiscales
       )
+    );
+  }
+
+  if (Array.isArray(personalidad.promptBlocks) &&
+      personalidad.promptBlocks.length > 0) {
+    lineas.push(
+      "perfil_de_personalidad: " +
+      personalidad.promptBlocks.join(" || ")
+    );
+  }
+
+  if (personalidad.ejes?.A?.estado?.tono) {
+    lineas.push(
+      "tono_relacional_actual: " +
+      personalidad.ejes.A.estado.tono
+    );
+  }
+
+  if (personalidad.ejes?.F?.comportamiento?.actitud) {
+    lineas.push(
+      "seguridad_vincular: " +
+      personalidad.ejes.F.comportamiento.actitud.join(", ")
+    );
+  }
+
+  if (personalidad.preferences?.estilo) {
+    lineas.push(
+      "estilo_usuario_detectado: " +
+      personalidad.preferences.estilo
     );
   }
 

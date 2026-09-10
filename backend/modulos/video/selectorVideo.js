@@ -26,6 +26,11 @@ const catalogo = {
 };
 
 function determinarCategoria(contexto = {}, expresion = {}) {
+  const estadoVisual =
+    contexto.personalidad?.ejes?.H?.estadoVisual?.video || "";
+  if (estadoVisual.includes("interactivo")) return "texting";
+  if (estadoVisual.includes("calmo")) return "aliviada";
+  if (estadoVisual.includes("relajado")) return "calida";
   const emocion = contexto.entradaProcesada?.emocion || "neutral";
   const tipo = contexto.entradaProcesada?.intencion || "comentario";
   const tono = expresion?.tono || "calido";
@@ -41,7 +46,9 @@ function determinarCategoria(contexto = {}, expresion = {}) {
 function seleccionarVideo(contexto = {}, expresion = {}) {
   const categoria = determinarCategoria(contexto, expresion);
   const opciones = catalogo[categoria] || catalogo.calida;
-  const indice = 0;
+  const sugerencia =
+    contexto.personalidad?.personalidadVisual?.estilo?.tono;
+  const indice = sugerencia === "cálido" && opciones.length > 1 ? 1 : 0;
   const seleccionado = opciones[indice];
   return {
     categoria,

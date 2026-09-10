@@ -32,6 +32,7 @@ import veniceClient from "../llm/veniceClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import expresionFinal from "../modulos/expresion/expresionFinal.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
+import personalityEngine from "../modulos/personalidad/personalityEngine.js";
 
 async function orquestador(mensajeUsuario, contexto = {}) {
   let memoriaUsuario = null;
@@ -99,6 +100,14 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     }
   };
 
+  const perfilPersonalidad =
+    personalityEngine.analizar(
+      mensajeUsuario,
+      contextoCompleto
+    );
+
+  contextoCompleto.personalidad = perfilPersonalidad;
+
   let debugMemoriaEscritura = null;
 
   if (contexto.userId) {
@@ -121,6 +130,33 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // =========================================================
   // [COGNITION] 4. COGNICIÓN (DECISIÓN CENTRAL)
   // =========================================================
+
+  if (perfilPersonalidad?.seguridad?.bloqueado) {
+    return {
+      respuesta: perfilPersonalidad.seguridad.mensaje,
+      expresion: {
+        tono: "serio",
+        ritmo: "suave",
+        microexpresion: "mirada_atenta",
+        intensidad: "suave"
+      },
+      video: selectorVideo.seleccionarVideo(
+        contextoCompleto,
+        { tono: "serio" }
+      ),
+      premium: contextoCompleto.memoriaEspecializada.premium,
+      debug: {
+        entradaProcesada,
+        memoriaUsuario,
+        memoriaSistema,
+        memoriaEspecializada:
+          contextoCompleto.memoriaEspecializada,
+        memoriaEscritura:
+          debugMemoriaEscritura,
+        personalidad: perfilPersonalidad
+      }
+    };
+  }
 
   const resultadoCognicion = await cognicion(mensajeUsuario, contextoCompleto);
 
@@ -167,7 +203,10 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // [PERSONA] 5. PERSONALIDAD (QUIÉN LO DICE)
   // =========================================================
 
-  if (
+  if (perfilPersonalidad?.basePersona?.estado) {
+    contextoCompleto.estado =
+      perfilPersonalidad.basePersona.estado;
+  } else if (
     personalidad &&
     typeof personalidad.decidirComportamiento === "function"
   ) {
@@ -190,6 +229,12 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   if (typeof estiloExpresivo === "function") {
     respuesta = estiloExpresivo(respuesta, contextoCompleto);
   }
+
+  respuesta = personalityEngine.aplicar(
+    respuesta,
+    perfilPersonalidad,
+    contextoCompleto
+  );
 
   const expresion =
     expresionFinal.aplicarExpresionFinal(
@@ -232,7 +277,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
         contextoCompleto.memoriaEspecializada,
       memoriaEscritura:
         debugMemoriaEscritura,
-      llm: debugLLM
+      llm: debugLLM,
+      personalidad: perfilPersonalidad
     }
   };
 }
