@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JOI</string>
+    <string name="login_title">JOI</string>
+    <string name="login_subtitle">Iniciá con Google y JOI aprenderá de tus interacciones automáticamente.</string>
+    <string name="login_google">Ingresar con Google</string>
+    <string name="bitacora">Bitácora</string>
+    <string name="limpiar_chat">Limpiar chat</string>
+    <string name="cerrar_sesion">Cerrar sesión</string>
+    <string name="editar_foto">Editar foto</string>
+    <string name="widget_title">Ventana del avatar</string>
+    <string name="premium_cta">Conocer Premium</string>
+    <string name="send">Enviar</string>
+</resources>

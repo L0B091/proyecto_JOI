@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="joi_black">#050608</color>
+    <color name="joi_surface">#10141A</color>
+    <color name="joi_panel">#131A22</color>
+    <color name="joi_panel_alt">#0D1117</color>
+    <color name="joi_accent">#00FFCC</color>
+    <color name="joi_accent_dim">#3300FFCC</color>
+    <color name="joi_text_primary">#F5F7FA</color>
+    <color name="joi_text_secondary">#9AA8B4</color>
+    <color name="joi_danger">#FF5C7A</color>
+</resources>
