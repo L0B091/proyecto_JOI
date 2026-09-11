@@ -4,7 +4,7 @@ import path from "path";
 /**
 * GESTOR DE ALARMAS JOI
 * Backend liviano: administra datos y sincronización
-* La ejecución real ocurre en la app Flutter
+* La ejecución real ocurre en el cliente móvil oficial
 */
 
 const DB_PATH = path.resolve("./backend/data/alarmas.json");
@@ -26,6 +26,7 @@ function leerDB() {
 
 function escribirDB(alarmas) {
   try {
+    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     fs.writeFileSync(DB_PATH, JSON.stringify(alarmas, null, 2));
   } catch (err) {
     console.error("❌ Error guardando alarmas:", err);
@@ -82,8 +83,18 @@ function obtenerAlarmasPorUsuario(userID) {
   );
 }
 
+function obtenerAlarma(userID, alarmId = null) {
+  const alarmas = leerDB();
+  return alarmas.find(
+    (a) =>
+      a.userID === userID &&
+      a.estado === "ACTIVE" &&
+      (alarmId ? a.id === alarmId : true)
+  ) ?? null;
+}
+
 /**
-* Cerrar alarma (cuando usuario la apaga en Flutter)
+* Cerrar alarma (cuando el usuario la apaga desde el cliente)
 */
 function cerrarAlarma(userID, alarmId = null) {
   const alarmas = leerDB();
@@ -106,8 +117,30 @@ function cerrarAlarma(userID, alarmId = null) {
   escribirDB(actualizadas);
 }
 
+function actualizarAlarma(userID, data = {}, alarmId = null) {
+  const alarmas = leerDB();
+
+  const actualizadas = alarmas.map((a) => {
+    if (
+      a.userID === userID &&
+      a.estado === "ACTIVE" &&
+      (alarmId ? a.id === alarmId : true)
+    ) {
+      return {
+        ...a,
+        ...data,
+        updatedAt: new Date().toISOString()
+      };
+    }
+    return a;
+  });
+
+  escribirDB(actualizadas);
+  return obtenerAlarma(userID, alarmId);
+}
+
 /**
-* Sincronizar cambios desde la app Flutter
+* Sincronizar cambios desde el cliente móvil
 */
 function actualizarDesdeApp(alarmId, data = {}) {
   const alarmas = leerDB();
@@ -133,6 +166,8 @@ export default {
   obtenerAlarmas,
   obtenerAlarmasActivas,
   obtenerAlarmasPorUsuario,
+  obtenerAlarma,
   cerrarAlarma,
+  actualizarAlarma,
   actualizarDesdeApp
 }; 

@@ -1,6 +1,6 @@
 // backend/modulos/protocoloDespertador.js
 
-import obtenerClima from "../apis/clima.js";
+import obtenerClima from "../api/clima.js";
 import gestorDeAlarmas from "./gestorDeAlarmas.js";
 
 /**
@@ -24,6 +24,15 @@ async function vibracionDoble() {
 */
 async function push(userID, mensaje) {
   console.log(`📩 [${userID}] ${mensaje}`);
+}
+
+async function obtenerMensajeClimaSeguro() {
+  try {
+    const clima = await obtenerClima(0, 0);
+    return clima?.mensajeCorto || "Buen día. Ya registré tu despertar.";
+  } catch (error) {
+    return "Buen día. Ya registré tu despertar.";
+  }
 }
 
 /**
@@ -60,18 +69,18 @@ async function ejecutarStage(userID, stage, respuestaUsuario = false) {
 
     // Si el usuario responde en cualquier momento
     if (respuestaUsuario) {
-      const clima = await obtenerClima(0, 0);
+      const mensajeClima = await obtenerMensajeClimaSeguro();
 
       await push(
         userID,
-        `🌤 Buen día! ${clima.mensajeCorto}`
+        `🌤 ${mensajeClima}`
       );
 
       gestorDeAlarmas.cerrarAlarma(userID);
 
       return {
         estado: "respondio",
-        mensaje: clima.mensajeCorto
+        mensaje: mensajeClima
       };
     }
   }
