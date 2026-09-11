@@ -4,6 +4,20 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    plugins {
+        id("com.android.application") version "8.5.2"
+        id("org.jetbrains.kotlin.android") version "1.9.24"
+    }
+    resolutionStrategy {
+        eachPlugin {
+            when (requested.id.id) {
+                "com.android.application" ->
+                    useModule("com.android.tools.build:gradle:${requested.version ?: "8.5.2"}")
+                "org.jetbrains.kotlin.android" ->
+                    useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version ?: "1.9.24"}")
+            }
+        }
+    }
 }
 
 dependencyResolutionManagement {
