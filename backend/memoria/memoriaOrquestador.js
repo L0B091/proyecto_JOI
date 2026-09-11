@@ -29,7 +29,8 @@ import datosUsuario from "./datosUsuario.js";
 async function ejecutar({
   userId,
   mensaje,
-  entradaProcesada = null
+  entradaProcesada = null,
+  persistirEnServidor = true
 }) {
   if (
     !userId ||
@@ -46,20 +47,24 @@ async function ejecutar({
   // =========================================================
 
   const actividad =
-    registrarActividad.registrarActividad(
-      userId,
-      new Date(timestamp)
-    );
+    persistirEnServidor
+      ? registrarActividad.registrarActividad(
+          userId,
+          new Date(timestamp)
+        )
+      : registrarActividad.obtenerActividad(userId);
 
   // =========================================================
   // 2. HISTORIAL
   // =========================================================
 
-  historialConversacion.registrarMensaje(
-    userId,
-    mensaje,
-    "usuario"
-  );
+  if (persistirEnServidor) {
+    historialConversacion.registrarMensaje(
+      userId,
+      mensaje,
+      "usuario"
+    );
+  }
 
   // =========================================================
   // 3. MEMORIA CORTA

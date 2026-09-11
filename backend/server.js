@@ -13,6 +13,7 @@ import calendarioApi from "./api/calendario.js";
 import notificacionesApi from "./api/notificaciones.js";
 import mercadoPagoApi from "./api/mercadoPago.js";
 import premiumManager from "./modulos/premium/premiumManager.js";
+import backupManager from "./modulos/premium/backupManager.js";
 import codigoMemoria from "./memoria/codigoMemoria.js";
 import documentosFiscales from "./memoria/documentosFiscales.js";
 import googleAuth from "./auth/googleAuth.js";
@@ -39,7 +40,7 @@ const healthRateLimit = rateLimit({
 });
 
 app.use(cors());
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "5mb" }));
 
 function handleAsync(handler) {
   return (req, res, next) => {
@@ -232,6 +233,25 @@ app.post("/api/mercadopago/webhook", handleAsync(async (req, res) => {
 app.get("/api/premium/:userId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
   res.json({ ok: true, data: premiumManager.obtenerEstado(userId) });
+});
+
+app.get("/api/premium/:userId/backup", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const premium = premiumManager.obtenerEstado(userId);
+  if (!premium.premiumActivo) {
+    return res.status(403).json({ ok: false, error: "Premium requerido para restaurar respaldo" });
+  }
+  res.json({ ok: true, data: backupManager.obtenerBackup(userId) });
+});
+
+app.put("/api/premium/:userId/backup", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const premium = premiumManager.obtenerEstado(userId);
+  if (!premium.premiumActivo) {
+    return res.status(403).json({ ok: false, error: "Premium requerido para guardar respaldo" });
+  }
+  const backup = req.body?.backup || {};
+  res.json({ ok: true, data: backupManager.guardarBackup(userId, backup) });
 });
 
 app.get("/api/memoria/codigo/:userId", requireAuth, (req, res) => {

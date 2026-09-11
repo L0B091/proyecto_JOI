@@ -10,14 +10,18 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.joi.android.data.LocalMemoryStore
 import com.joi.android.data.SessionStorage
 import com.joi.android.data.UserSession
 import com.joi.android.databinding.ActivityLoginBinding
+import com.joi.android.net.JoiBackendClient
+import kotlin.concurrent.thread
 
 class LoginActivity : AppCompatActivity() {
     private lateinit var binding: ActivityLoginBinding
     private lateinit var googleSignInClient: GoogleSignInClient
     private lateinit var sessionStorage: SessionStorage
+    private val backendClient = JoiBackendClient()
 
     private val googleSignInLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -41,9 +45,12 @@ class LoginActivity : AppCompatActivity() {
             return
         }
 
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        val gsoBuilder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .build()
+        if (backendClient.googleWebClientId.isNotBlank()) {
+            gsoBuilder.requestIdToken(backendClient.googleWebClientId)
+        }
+        val gso = gsoBuilder.build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
 
         binding.googleButton.setOnClickListener {
@@ -57,13 +64,58 @@ class LoginActivity : AppCompatActivity() {
             return
         }
 
-        val session = UserSession(
+        val fallbackSession = UserSession(
             displayName = account.displayName ?: "Usuario JOI",
             email = account.email ?: "",
-            id = account.id ?: account.email ?: "user-${System.currentTimeMillis()}"
+            id = account.id ?: account.email ?: "user-${System.currentTimeMillis()}",
+            photoUrl = account.photoUrl?.toString()
         )
-        sessionStorage.saveUser(session)
-        openMain()
+
+        val canUseBackend = backendClient.isConfigured() &&
+            backendClient.googleWebClientId.isNotBlank() &&
+            !account.idToken.isNullOrBlank() &&
+            backendClient.isOnline(this)
+
+        if (!canUseBackend) {
+            sessionStorage.saveUser(fallbackSession)
+            Toast.makeText(this, getString(R.string.backend_auth_unavailable), Toast.LENGTH_LONG).show()
+            openMain()
+            return
+        }
+
+        binding.googleButton.isEnabled = false
+        thread {
+            runCatching {
+                backendClient.authenticateWithGoogle(account.idToken!!)
+            }.onSuccess { auth ->
+                val session = UserSession(
+                    displayName = auth.displayName.ifBlank { fallbackSession.displayName },
+                    email = fallbackSession.email,
+                    id = auth.userId.ifBlank { fallbackSession.id },
+                    authToken = auth.token,
+                    photoUrl = auth.photoUrl ?: fallbackSession.photoUrl,
+                    emailVerified = auth.emailVerified,
+                    premiumUntilMillis = 0L
+                )
+                runOnUiThread {
+                    sessionStorage.saveUser(session)
+                    binding.googleButton.isEnabled = true
+                    LocalMemoryStore(this).migrateUserMemory(fallbackSession.id, session.id)
+                    openMain()
+                }
+            }.onFailure {
+                runOnUiThread {
+                    sessionStorage.saveUser(fallbackSession)
+                    binding.googleButton.isEnabled = true
+                    Toast.makeText(
+                        this,
+                        "Backend no disponible. Se abrió una sesión local.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    openMain()
+                }
+            }
+        }
     }
 
     private fun openMain() {

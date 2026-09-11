@@ -1,3 +1,16 @@
+fun String.gradleQuoted(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val backendBaseUrl =
+    (findProperty("JOI_BACKEND_BASE_URL") as String?)
+        ?: System.getenv("JOI_ANDROID_BACKEND_BASE_URL")
+        ?: ""
+
+val googleWebClientId =
+    (findProperty("JOI_GOOGLE_WEB_CLIENT_ID") as String?)
+        ?: System.getenv("JOI_ANDROID_GOOGLE_WEB_CLIENT_ID")
+        ?: ""
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,6 +29,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "MERCADO_PAGO_URL", "\"https://www.mercadopago.com.ar/\"")
+        buildConfigField("String", "BACKEND_BASE_URL", backendBaseUrl.gradleQuoted())
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", googleWebClientId.gradleQuoted())
     }
 
     buildTypes {

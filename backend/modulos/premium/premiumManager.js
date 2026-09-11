@@ -24,8 +24,8 @@ export const PLAN = {
     "Gestión de proyectos y archivos",
     "Gestor Fiscal",
     "Almacenamiento de comprobantes",
-    "Copia de respaldo de la memoria completa del orquestador",
-    "Recuperación del agente en otro teléfono",
+    "Copia cifrada del respaldo local de memoria Android",
+    "Restauración del respaldo local en otro teléfono",
     "Modo Adulto"
   ]
 };

@@ -34,8 +34,47 @@ import expresionFinal from "../modulos/expresion/expresionFinal.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
 import personalityEngine from "../modulos/personalidad/personalityEngine.js";
 
+function normalizarMemoriaLocal(memoriaLocal = {}) {
+  if (!memoriaLocal || typeof memoriaLocal !== "object") {
+    return null;
+  }
+
+  const recentConversation = Array.isArray(memoriaLocal.recentConversation)
+    ? memoriaLocal.recentConversation
+      .map(item => ({
+        tipo: item?.role === "assistant" ? "joi" : "user",
+        mensaje: String(item?.text || "").trim()
+      }))
+      .filter(item => item.mensaje)
+    : [];
+
+  return {
+    source: memoriaLocal.source || "android_local_primary",
+    shortTermFocus: memoriaLocal.shortTermFocus || null,
+    shortTermIntent: memoriaLocal.shortTermIntent || null,
+    recentConversation,
+    persistentMemories: Array.isArray(memoriaLocal.persistentMemories)
+      ? memoriaLocal.persistentMemories
+      : [],
+    importantMemories: Array.isArray(memoriaLocal.importantMemories)
+      ? memoriaLocal.importantMemories
+      : [],
+    codeMemories: Array.isArray(memoriaLocal.codeMemories)
+      ? memoriaLocal.codeMemories
+      : [],
+    fiscalMemories: Array.isArray(memoriaLocal.fiscalMemories)
+      ? memoriaLocal.fiscalMemories
+      : []
+  };
+}
+
 async function orquestador(mensajeUsuario, contexto = {}) {
   let memoriaUsuario = null;
+  const memoriaLocal = normalizarMemoriaLocal(
+    contexto.memoriaLocal
+  );
+  const persistirEnServidor =
+    memoriaLocal?.source !== "android_local_primary";
 
   if (contexto.userId) {
     try {
@@ -53,7 +92,9 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     procesadorEntrada.procesarEntrada(
       contexto.userId || "anonimo",
       mensajeUsuario,
-      memoriaUsuario?.historialConversacion || []
+      memoriaLocal?.recentConversation ||
+        memoriaUsuario?.historialConversacion ||
+        []
     );
 
   // =========================================================
@@ -68,7 +109,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       memoriaSistema = await memoriaOrquestador.ejecutar({
         userId: contexto.userId,
         mensaje: mensajeUsuario,
-        entradaProcesada
+        entradaProcesada,
+        persistirEnServidor
       });
     } catch (err) {
       console.error("Error en memoriaOrquestador:", err);
@@ -84,6 +126,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     ...contexto,
     entradaProcesada,
     memoriaUsuario,
+    memoriaLocal,
 
     //  NUEVO: CONTEXTO COGNITIVO COMPLETO
     memoriaSistema,
@@ -100,6 +143,42 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     }
   };
 
+  if (memoriaLocal?.shortTermFocus) {
+    contextoCompleto.memoriaSistema = {
+      ...memoriaSistema,
+      memoriaCorta: {
+        ...(memoriaSistema?.memoriaCorta || {}),
+        foco: memoriaLocal.shortTermFocus,
+        intencionDetectada:
+          memoriaLocal.shortTermIntent ||
+          memoriaSistema?.memoriaCorta?.intencionDetectada
+      }
+    };
+  }
+
+  if (memoriaLocal?.recentConversation?.length) {
+    contextoCompleto.memoriaSistema = {
+      ...(contextoCompleto.memoriaSistema || {}),
+      memoriaSelectiva: {
+        ...(contextoCompleto.memoriaSistema?.memoriaSelectiva || {}),
+        memoriaReciente: memoriaLocal.recentConversation
+      }
+    };
+  }
+
+  if (memoriaLocal?.codeMemories?.length) {
+    contextoCompleto.memoriaEspecializada.codigoReciente =
+      memoriaLocal.codeMemories;
+  }
+
+  if (memoriaLocal?.fiscalMemories?.length) {
+    contextoCompleto.memoriaEspecializada.documentosFiscales = {
+      source: "android_local_primary",
+      totalDocumentos: memoriaLocal.fiscalMemories.length,
+      items: memoriaLocal.fiscalMemories
+    };
+  }
+
   const perfilPersonalidad =
     personalityEngine.analizar(
       mensajeUsuario,
@@ -110,7 +189,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   let debugMemoriaEscritura = null;
 
-  if (contexto.userId) {
+  if (contexto.userId && persistirEnServidor) {
     try {
       debugMemoriaEscritura =
         writeBackEngine.evaluarWriteBack({
@@ -151,6 +230,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
         memoriaSistema,
         memoriaEspecializada:
           contextoCompleto.memoriaEspecializada,
+        memoriaLocal,
         memoriaEscritura:
           debugMemoriaEscritura,
         personalidad: perfilPersonalidad
@@ -249,7 +329,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       expresion.metadata
     );
 
-  if (contexto.userId && respuesta) {
+  if (contexto.userId && respuesta && persistirEnServidor) {
     historialConversacion.registrarMensaje(
       contexto.userId,
       respuesta,
@@ -275,6 +355,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       memoriaSistema,
       memoriaEspecializada:
         contextoCompleto.memoriaEspecializada,
+      memoriaLocal,
       memoriaEscritura:
         debugMemoriaEscritura,
       llm: debugLLM,

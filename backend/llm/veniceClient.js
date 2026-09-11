@@ -89,11 +89,17 @@ function construirContextoInterno({
 }) {
   const entrada = contexto.entradaProcesada || {};
   const memoriaSistema = contexto.memoriaSistema || {};
+  const memoriaLocal = contexto.memoriaLocal || {};
   const datosUsuario = memoriaSistema.datosUsuario || {};
-  const recuerdos =
-    resumirRecuerdos(
+  const recuerdos = [
+    ...resumirRecuerdos(
       memoriaSistema.recuerdosImportantes
-    );
+    ),
+    ...(Array.isArray(memoriaLocal.importantMemories)
+      ? memoriaLocal.importantMemories
+        .map(item => limpiarTexto(item?.text))
+      : [])
+  ].filter(Boolean).slice(-8);
   const memoriaEspecializada =
     contexto.memoriaEspecializada || {};
   const personalidad = contexto.personalidad || {};
@@ -118,11 +124,13 @@ function construirContextoInterno({
       ),
     "foco_memoria: " +
       limpiarTexto(
+        memoriaLocal.shortTermFocus ||
         memoriaSistema.memoriaCorta?.foco,
         "general"
       ),
     "intencion_memoria: " +
       limpiarTexto(
+        memoriaLocal.shortTermIntent ||
         memoriaSistema.memoriaCorta
           ?.intencionDetectada,
         "conversacion"
@@ -242,8 +250,10 @@ function construirMensajes({
   respuestaBase = ""
 }) {
   const historial =
-    contexto.memoriaSistema?.memoriaSelectiva
-      ?.memoriaReciente;
+    contexto.memoriaLocal?.recentConversation?.length
+      ? contexto.memoriaLocal.recentConversation
+      : contexto.memoriaSistema?.memoriaSelectiva
+        ?.memoriaReciente;
 
   const mensajes = [
     {

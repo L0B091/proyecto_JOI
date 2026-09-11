@@ -16,4 +16,14 @@
     <string name="message_hint">ESCRIBIR MENSAJE...</string>
     <string name="nodo_prefix">NODO_ID //</string>
     <string name="audio_widget">Audio widget</string>
+    <string name="offline_memory_notice">SIN CONEXIÓN. JOI CONSERVA TU MEMORIA LOCAL HASTA RECUPERAR EL BACKEND.</string>
+    <string name="premium_backup_done">RESPALDO PREMIUM ACTUALIZADO.</string>
+    <string name="premium_backup_failed">NO SE PUDO RESPALDAR LA MEMORIA PREMIUM.</string>
+    <string name="premium_restore_done">MEMORIA PREMIUM RESTAURADA LOCALMENTE.</string>
+    <string name="premium_restore_empty">NO HAY RESPALDO PREMIUM DISPONIBLE.</string>
+    <string name="premium_restore_failed">NO SE PUDO RESTAURAR EL RESPALDO PREMIUM.</string>
+    <string name="backend_auth_unavailable">GOOGLE SIGN-IN LOCAL ACTIVO. FALTA CONFIGURAR BACKEND O CLIENT ID WEB.</string>
+    <string name="bitacora_sync_wait">AUTO-SYNC // WAITING BACKEND</string>
+    <string name="premium_backup">RESPALDAR MEMORIA</string>
+    <string name="premium_restore">RESTAURAR RESPALDO</string>
 </resources>
