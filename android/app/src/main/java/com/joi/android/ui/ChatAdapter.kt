@@ -4,6 +4,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.joi.android.R
@@ -39,21 +40,27 @@ class ChatAdapter : RecyclerView.Adapter<ChatAdapter.ChatViewHolder>() {
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(message: ChatMessage) {
             binding.messageText.text = message.text
-            val layoutParams = binding.messageText.layoutParams as FrameLayout.LayoutParams
+
+            val rootParams = binding.messageContainer.layoutParams as FrameLayout.LayoutParams
+            val containerParams = binding.messageText.layoutParams as LinearLayout.LayoutParams
+
             if (message.fromJoi) {
-                layoutParams.gravity = Gravity.START
-                binding.messageText.background = ContextCompat.getDrawable(
-                    binding.root.context,
-                    R.drawable.bg_message_joi
-                )
+                rootParams.gravity = Gravity.START
+                binding.labelText.text = binding.root.context.getString(R.string.joi_data_stream)
+                binding.labelText.visibility = android.view.View.VISIBLE
+                binding.messageText.background = ContextCompat.getDrawable(binding.root.context, R.drawable.bg_message_joi)
+                binding.messageText.setTextColor(ContextCompat.getColor(binding.root.context, R.color.joi_text_primary))
+                containerParams.marginStart = 0
             } else {
-                layoutParams.gravity = Gravity.END
-                binding.messageText.background = ContextCompat.getDrawable(
-                    binding.root.context,
-                    R.drawable.bg_message_user
-                )
+                rootParams.gravity = Gravity.END
+                binding.labelText.visibility = android.view.View.GONE
+                binding.messageText.background = ContextCompat.getDrawable(binding.root.context, R.drawable.bg_message_user)
+                binding.messageText.setTextColor(ContextCompat.getColor(binding.root.context, R.color.joi_text_secondary))
+                containerParams.marginStart = 0
             }
-            binding.messageText.layoutParams = layoutParams
+
+            binding.messageContainer.layoutParams = rootParams
+            binding.messageText.layoutParams = containerParams
         }
     }
 }

@@ -83,7 +83,8 @@ class MainActivity : AppCompatActivity() {
         binding.clearChatButton.setOnClickListener {
             visibleConversation.clear()
             chatAdapter.submitList(visibleConversation.toList())
-            Toast.makeText(this, "Pantalla del chat limpiada.", Toast.LENGTH_SHORT).show()
+            binding.avatarStateText.text = "STATE // STANDBY"
+            Toast.makeText(this, "PANTALLA LIMPIA", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -97,21 +98,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBitacora(session: UserSession) {
-        binding.userNameText.text = "userName : ${session.displayName}"
-        binding.userIdText.text = "Id : ${session.id}"
-        binding.linkText.text = "Enlace psicológico: ${sessionStorage.linkPercentage(session)}%"
-        val planLabel = if (session.isPremium) "premium" else "free"
-        binding.statusText.text = "Estado: estable ($planLabel)"
-        binding.legendText.text = "Free: conversación, APIs, memoria básica, personalidad y visual.\nPremium: M/A, proyectos, memoria extendida, archivos, fiscal y respaldo de memoria en la nube."
+        binding.userNameText.text = "USERNAME // ${session.displayName.uppercase(Locale.getDefault())}"
+        binding.userIdText.text = "ID // ${session.id.uppercase(Locale.getDefault())}"
+        binding.linkText.text = "ENLACE PSICOLÓGICO // ${sessionStorage.linkPercentage(session)}%"
+        val planLabel = if (session.isPremium) "ESTABLE (PREMIUM)" else "ESTABLE (FREE)"
+        binding.statusText.text = "ESTADO // $planLabel"
+        binding.legendText.text = buildString {
+            append("[JOI] AUTO-SYNC ACTIVO\n")
+            append("[MEMORIA] APRENDIZAJE ADAPTATIVO HABILITADO\n")
+            append("[USUARIO] SESIÓN VINCULADA A ${session.email.uppercase(Locale.getDefault())}\n")
+            append("[SISTEMA] CANAL VISUAL Y CHAT DISPONIBLES")
+        }
 
         binding.editProfileButton.setOnClickListener {
-            Toast.makeText(this, "La edición de foto queda preparada para una siguiente iteración.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "EDICIÓN DE PERFIL RESERVADA", Toast.LENGTH_SHORT).show()
         }
 
         binding.signOutButton.setOnClickListener {
-            val options = GoogleSignInOptions.Builder(
-                GoogleSignInOptions.DEFAULT_SIGN_IN
-            ).requestEmail().build()
+            val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .build()
             GoogleSignIn.getClient(this, options)
                 .signOut()
                 .addOnCompleteListener {
@@ -127,37 +133,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWidget() {
-        updateWidgetScene(
-            AvatarWidgetScene(
-                title = "Clip lectura",
-                subtitle = "Ventana al mundo del avatar",
-                temperature = "21°C"
-            )
-        )
+        updateWidgetScene(AvatarWidgetScene("CLIP LECTURA", "VENTANA AL MUNDO DEL AVATAR", "21°C"))
 
         binding.chipLectura.setOnClickListener {
-            updateWidgetScene(AvatarWidgetScene("Clip lectura", "Calma y foco", "21°C"))
+            updateWidgetScene(AvatarWidgetScene("CLIP LECTURA", "CALMA Y FOCO", "21°C"))
+            binding.avatarStateText.text = "STATE // THINKING"
         }
         binding.chipMusica.setOnClickListener {
-            updateWidgetScene(AvatarWidgetScene("Clip música", "Escucha activa", "23°C"))
+            updateWidgetScene(AvatarWidgetScene("CLIP MÚSICA", "AUDIO Y PRESENCIA", "23°C"))
+            binding.avatarStateText.text = "STATE // HAPPY"
         }
         binding.chipAtenta.setOnClickListener {
-            updateWidgetScene(AvatarWidgetScene("Clip atento", "Presencia y observación", "20°C"))
+            updateWidgetScene(AvatarWidgetScene("CLIP ATENCIÓN", "ESCUCHA ACTIVA", "20°C"))
+            binding.avatarStateText.text = "STATE // LISTENING"
+        }
+        binding.audioPrimaryButton.setOnClickListener {
+            Toast.makeText(this, "AUDIO // ACTIVE", Toast.LENGTH_SHORT).show()
+        }
+        binding.audioMoreButton.setOnClickListener {
+            binding.drawerLayout.openDrawer(GravityCompat.START)
+        }
+        binding.audioMuteButton.setOnClickListener {
+            Toast.makeText(this, "AUDIO // MUTE", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun updateWidgetScene(scene: AvatarWidgetScene) {
         val clock = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         binding.widgetSceneText.text = scene.title
-        binding.widgetFooterText.text = "$clock · ${scene.temperature}"
+        binding.widgetFooterText.text = "$clock // ${scene.temperature}"
     }
 
     private fun setupVideo() {
         player = ExoPlayer.Builder(this).build().also { exoPlayer ->
             binding.playerView.player = exoPlayer
-            val mediaItem = MediaItem.fromUri(
-                Uri.parse("android.resource://$packageName/${R.raw.joi_texting}")
-            )
+            val mediaItem = MediaItem.fromUri(Uri.parse("android.resource://$packageName/${R.raw.joi_texting}"))
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.repeatMode = ExoPlayer.REPEAT_MODE_ALL
             exoPlayer.volume = 0f
@@ -168,8 +178,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun seedConversation() {
         if (fullConversation.isNotEmpty()) return
-        fullConversation += ChatMessage("Sincronización completa. Estoy lista para acompañarte.", true)
-        fullConversation += ChatMessage("Aprendo de tus interacciones y me ajusto automáticamente.", true)
+        fullConversation += ChatMessage("SINCRONIZACIÓN COMPLETA. ESTOY LISTA PARA CUSTODIAR TU JORNADA.", true)
+        fullConversation += ChatMessage("APRENDO DE TUS INTERACCIONES Y AJUSTO MI CONTEXTO AUTOMÁTICAMENTE.", true)
         visibleConversation += fullConversation
         renderConversation()
     }
@@ -178,9 +188,10 @@ class MainActivity : AppCompatActivity() {
         val content = binding.messageInput.text?.toString()?.trim().orEmpty()
         if (content.isEmpty()) return
 
-        val userMessage = ChatMessage(content, false)
+        val visibleUserText = content.uppercase(Locale.getDefault())
+        val userMessage = ChatMessage(visibleUserText, false)
         val joiReply = ChatMessage(
-            "Lo registro en mi contexto y ajusto el vínculo con vos de forma automática.",
+            "REGISTRO TU MENSAJE EN EL ORQUESTADOR Y ACTUALIZO MI ESTADO DE INTERACCIÓN.",
             true
         )
 
@@ -189,6 +200,7 @@ class MainActivity : AppCompatActivity() {
         visibleConversation += userMessage
         visibleConversation += joiReply
         binding.messageInput.text?.clear()
+        binding.avatarStateText.text = "STATE // TALKING"
         renderConversation()
     }
 
@@ -203,14 +215,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPremiumDialog() {
         AlertDialog.Builder(this)
-            .setTitle("Premium JOI")
-            .setMessage(
-                "Cuando quieras usar M/A, JOI explica el plan premium y habilita el cobro por Mercado Pago. El acceso premium dura 30 días y no se renueva automáticamente."
-            )
-            .setPositiveButton("Abrir Mercado Pago") { _, _ ->
+            .setTitle("PREMIUM JOI")
+            .setMessage("MODO PREMIUM HABILITA M/A, MEMORIA EXTENDIDA, GESTIÓN DE ARCHIVOS Y RESPALDO DE MEMORIA COMPLETA DURANTE 30 DÍAS.")
+            .setPositiveButton("ABRIR MERCADO PAGO") { _, _ ->
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.MERCADO_PAGO_URL)))
             }
-            .setNegativeButton("Cerrar", null)
+            .setNegativeButton("CERRAR", null)
             .show()
     }
 }
