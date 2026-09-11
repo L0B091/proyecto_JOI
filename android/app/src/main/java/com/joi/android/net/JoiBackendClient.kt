@@ -34,7 +34,8 @@ data class BackendChatResult(
 
 data class PremiumStatusResult(
     val active: Boolean,
-    val premiumUntilMillis: Long
+    val premiumUntilMillis: Long,
+    val backupMaterial: String?
 )
 
 class JoiBackendClient {
@@ -100,8 +101,20 @@ class JoiBackendClient {
         val data = json.optJSONObject("data") ?: json
         return PremiumStatusResult(
             active = data.optBoolean("premiumActivo", false),
-            premiumUntilMillis = parseIsoMillis(data.optString("premiumHasta")) ?: 0L
+            premiumUntilMillis = parseIsoMillis(data.optString("premiumHasta")) ?: 0L,
+            backupMaterial = data.optString("backupMaterial").ifBlank { null }
         )
+    }
+
+    fun fetchBackupMaterial(session: UserSession): String {
+        val json = request(
+            method = "GET",
+            path = "/api/premium/${session.id}/backup/materials",
+            authToken = session.authToken
+        )
+        return json.optJSONObject("data")?.optString("backupMaterial")
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Material de respaldo no disponible")
     }
 
     fun uploadEncryptedBackup(session: UserSession, encryptedBackup: JSONObject) {

@@ -26,7 +26,7 @@ data class LocalAssetMemory(
 )
 
 data class LocalJoiMemory(
-    val version: Int = 1,
+    val version: Int = 2,
     val userId: String,
     val conversation: MutableList<LocalConversationEntry> = mutableListOf(),
     val shortTermFocus: String = "general",
@@ -84,7 +84,7 @@ data class LocalJoiMemory(
     companion object {
         fun fromJson(json: JSONObject): LocalJoiMemory {
             return LocalJoiMemory(
-                version = json.optInt("version", 1),
+                version = json.optInt("version", 1).coerceAtLeast(1),
                 userId = json.optString("userId"),
                 conversation = jsonArrayToConversation(json.optJSONArray("conversation")),
                 shortTermFocus = json.optString("shortTermFocus", "general"),
@@ -97,7 +97,7 @@ data class LocalJoiMemory(
             )
         }
 
-        private fun notesToJson(notes: List<LocalMemoryNote>): JSONArray = JSONArray().apply {
+        internal fun notesToJson(notes: List<LocalMemoryNote>): JSONArray = JSONArray().apply {
             notes.forEach { note ->
                 put(JSONObject().apply {
                     put("category", note.category)
@@ -108,7 +108,7 @@ data class LocalJoiMemory(
             }
         }
 
-        private fun assetsToJson(assets: List<LocalAssetMemory>): JSONArray = JSONArray().apply {
+        internal fun assetsToJson(assets: List<LocalAssetMemory>): JSONArray = JSONArray().apply {
             assets.forEach { asset ->
                 put(JSONObject().apply {
                     put("name", asset.name)
@@ -164,34 +164,46 @@ data class LocalJoiMemory(
 }
 
 class LocalMemoryStore(context: Context) {
-    private val root = File(context.filesDir, "joi_memory").apply { mkdirs() }
+    private val appContext = context.applicationContext
+    private val database = JoiMemoryDatabase.getInstance(appContext)
+    private val dao = database.memoryDao()
+    private val localVault = LocalVault(appContext)
+    private val legacyRoot = File(appContext.filesDir, "joi_memory")
 
     fun load(userId: String): LocalJoiMemory {
-        val file = memoryFile(userId)
-        if (!file.exists()) {
-            return LocalJoiMemory(userId = userId)
-        }
-        return runCatching {
-            LocalJoiMemory.fromJson(JSONObject(file.readText()))
-        }.getOrElse {
-            LocalJoiMemory(userId = userId)
-        }
+        migrateLegacyIfNeeded(userId)
+        val record = dao.findByUserId(userId) ?: return LocalJoiMemory(userId = userId)
+        return localVault.decrypt(record.ivBase64, record.payloadBase64)
+            ?.let { LocalJoiMemory.fromJson(JSONObject(it)) }
+            ?.copy(userId = userId)
+            ?: LocalJoiMemory(userId = userId)
     }
 
     fun save(memory: LocalJoiMemory) {
-        memoryFile(memory.userId).writeText(memory.withUpdatedTimestamp().toJson().toString())
+        val updated = memory.withUpdatedTimestamp()
+        val encrypted = localVault.encrypt(updated.toJson().toString())
+        dao.upsert(
+            JoiMemoryRecordEntity(
+                userId = updated.userId,
+                payloadBase64 = encrypted.payloadBase64,
+                ivBase64 = encrypted.ivBase64,
+                schemaVersion = updated.version,
+                updatedAt = updated.updatedAt
+            )
+        )
     }
 
     fun replace(memory: LocalJoiMemory) = save(memory)
 
     fun migrateUserMemory(fromUserId: String, toUserId: String) {
         if (fromUserId == toUserId) return
-        val fromFile = memoryFile(fromUserId)
-        if (!fromFile.exists()) return
+        migrateLegacyIfNeeded(fromUserId)
         if (!isEffectivelyEmpty(toUserId)) return
         val sourceMemory = load(fromUserId)
+        if (isEffectivelyEmpty(fromUserId)) return
         save(sourceMemory.copy(userId = toUserId))
-        fromFile.delete()
+        dao.deleteByUserId(fromUserId)
+        legacyFile(fromUserId).takeIf(File::exists)?.delete()
     }
 
     fun isEffectivelyEmpty(userId: String): Boolean {
@@ -213,14 +225,8 @@ class LocalMemoryStore(context: Context) {
                 .toMutableList(),
             shortTermFocus = inferFocus(text),
             shortTermIntent = inferIntent(text),
-            persistentMemories = mergeNotes(
-                memory.persistentMemories,
-                extractPersistentNote(text)
-            ),
-            importantMemories = mergeNotes(
-                memory.importantMemories,
-                extractImportantNote(text)
-            )
+            persistentMemories = mergeNotes(memory.persistentMemories, extractPersistentNote(text)),
+            importantMemories = mergeNotes(memory.importantMemories, extractImportantNote(text))
         )
         save(updated)
     }
@@ -237,9 +243,21 @@ class LocalMemoryStore(context: Context) {
         save(updated)
     }
 
-    private fun memoryFile(userId: String): File {
+    private fun migrateLegacyIfNeeded(userId: String) {
+        if (dao.findByUserId(userId) != null) return
+        val file = legacyFile(userId)
+        if (!file.exists()) return
+        runCatching {
+            val legacy = LocalJoiMemory.fromJson(JSONObject(file.readText())).copy(userId = userId, version = 2)
+            save(legacy)
+            file.delete()
+        }
+    }
+
+    private fun legacyFile(userId: String): File {
+        legacyRoot.mkdirs()
         val safeUserId = userId.lowercase(Locale.US).replace(Regex("[^a-z0-9._-]"), "_")
-        return File(root, "$safeUserId.json")
+        return File(legacyRoot, "$safeUserId.json")
     }
 
     private fun inferFocus(text: String): String {

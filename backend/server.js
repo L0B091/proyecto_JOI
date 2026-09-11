@@ -26,6 +26,14 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DEFAULT_CORS_ORIGINS = [
+  "http://localhost",
+  "http://127.0.0.1",
+  "http://10.0.2.2",
+  "https://localhost",
+  "https://127.0.0.1",
+  "https://10.0.2.2"
+];
 const authRateLimit = rateLimit({
   windowMs: 60 * 1000,
   limit: 10,
@@ -39,7 +47,27 @@ const healthRateLimit = rateLimit({
   legacyHeaders: false
 });
 
-app.use(cors());
+function getAllowedOrigins() {
+  const configured = String(process.env.CORS_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+  return configured.length > 0 ? configured : DEFAULT_CORS_ORIGINS;
+}
+
+const allowedOrigins = getAllowedOrigins();
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) {
+      return callback(null, true);
+    }
+    const allowed = allowedOrigins.some(item => origin === item || origin.startsWith(`${item}:`));
+    return callback(allowed ? null : new Error("Origen no permitido por CORS"), allowed);
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 app.use(express.json({ limit: "5mb" }));
 
 function handleAsync(handler) {
@@ -83,7 +111,11 @@ app.get("/health", healthRateLimit, (req, res) => {
     estado: "activo",
     timestamp: new Date().toISOString(),
     llm: veniceClient.obtenerDiagnostico(),
-    integrations: authStatus()
+    integrations: authStatus(),
+    cors: {
+      mode: "restricted",
+      allowedOrigins
+    }
   });
 });
 
@@ -235,6 +267,15 @@ app.get("/api/premium/:userId", requireAuth, (req, res) => {
   res.json({ ok: true, data: premiumManager.obtenerEstado(userId) });
 });
 
+app.get("/api/premium/:userId/backup/materials", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const premium = premiumManager.obtenerEstado(userId);
+  if (!premium.premiumActivo) {
+    return res.status(403).json({ ok: false, error: "Premium requerido para respaldo" });
+  }
+  res.json({ ok: true, data: premiumManager.obtenerMateriales(userId) });
+});
+
 app.get("/api/premium/:userId/backup", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
   const premium = premiumManager.obtenerEstado(userId);
@@ -331,7 +372,10 @@ app.use((req, res) => {
 });
 
 app.use((err, _req, res, _next) => {
-  console.error("💥 Error global:", err);
+  console.error("💥 Error global:", {
+    status: err.status || 500,
+    message: err.message || "Fallo inesperado del servidor"
+  });
   res.status(err.status || 500).json({
     ok: false,
     error: err.message || "Fallo inesperado del servidor",

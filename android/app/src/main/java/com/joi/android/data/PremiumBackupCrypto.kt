@@ -11,14 +11,15 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 class PremiumBackupCrypto {
-    fun encrypt(session: UserSession, memory: LocalJoiMemory): JSONObject {
+    fun encrypt(session: UserSession, memory: LocalJoiMemory, backupMaterial: String): JSONObject {
         val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, deriveKey(session), GCMParameterSpec(128, iv))
+        cipher.init(Cipher.ENCRYPT_MODE, deriveKey(session, backupMaterial), GCMParameterSpec(128, iv))
         val encrypted = cipher.doFinal(memory.toJson().toString().toByteArray(Charsets.UTF_8))
 
         return JSONObject().apply {
             put("version", 1)
+            put("keyVersion", 1)
             put("userId", session.id)
             put("ownerHash", ownerHash(session))
             put("updatedAt", System.currentTimeMillis())
@@ -27,7 +28,7 @@ class PremiumBackupCrypto {
         }
     }
 
-    fun decrypt(session: UserSession, payload: JSONObject): LocalJoiMemory? {
+    fun decrypt(session: UserSession, payload: JSONObject, backupMaterial: String): LocalJoiMemory? {
         if (payload.optString("ownerHash") != ownerHash(session)) {
             return null
         }
@@ -36,17 +37,19 @@ class PremiumBackupCrypto {
             val iv = Base64.decode(payload.getString("iv"), Base64.NO_WRAP)
             val ciphertext = Base64.decode(payload.getString("ciphertext"), Base64.NO_WRAP)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, deriveKey(session), GCMParameterSpec(128, iv))
+            cipher.init(Cipher.DECRYPT_MODE, deriveKey(session, backupMaterial), GCMParameterSpec(128, iv))
             val decrypted = cipher.doFinal(ciphertext).toString(Charsets.UTF_8)
             LocalJoiMemory.fromJson(JSONObject(decrypted))
         }.getOrNull()
     }
 
-    private fun deriveKey(session: UserSession): SecretKeySpec {
-        val salt = sha256("joi-premium-salt|${session.id}|${session.email.lowercase()}")
-        val passphrase = "joi-premium-backup|${session.id}|${session.email.lowercase()}|${session.displayName}"
+    private fun deriveKey(session: UserSession, backupMaterial: String): SecretKeySpec {
+        val material = backupMaterial.trim()
+        val salt = sha256("joi-premium-salt|$material|${session.id}|${session.email.lowercase()}")
+        val passphrase =
+            "joi-premium-backup|$material|${session.id}|${session.email.lowercase()}|${session.displayName}"
         val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val spec = PBEKeySpec(passphrase.toCharArray(), salt, 120_000, 256)
+        val spec = PBEKeySpec(passphrase.toCharArray(), salt, 210_000, 256)
         return SecretKeySpec(factory.generateSecret(spec).encoded, "AES")
     }
 

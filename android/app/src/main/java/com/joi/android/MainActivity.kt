@@ -40,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private var sessionStartedAt: Long = 0L
     private lateinit var currentSession: UserSession
     private var startedFromEmptyLocalMemory: Boolean = false
+    private var backupMaterial: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -329,6 +330,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 runOnUiThread {
                     updateCurrentSession(updatedSession)
+                    backupMaterial = premium.backupMaterial
                     if (updatedSession.isPremium && startedFromEmptyLocalMemory) {
                         restorePremiumBackup(silent = true)
                     }
@@ -366,7 +368,9 @@ class MainActivity : AppCompatActivity() {
         thread {
             runCatching {
                 val memory = localMemoryStore.load(currentSession.id)
-                val encrypted = premiumBackupCrypto.encrypt(currentSession, memory)
+                val material = backupMaterial ?: backendClient.fetchBackupMaterial(currentSession)
+                backupMaterial = material
+                val encrypted = premiumBackupCrypto.encrypt(currentSession, memory, material)
                 backendClient.uploadEncryptedBackup(currentSession, encrypted)
             }.onSuccess {
                 runOnUiThread {
@@ -393,7 +397,9 @@ class MainActivity : AppCompatActivity() {
         thread {
             runCatching {
                 val payload = backendClient.downloadEncryptedBackup(currentSession)
-                payload?.let { premiumBackupCrypto.decrypt(currentSession, it) }
+                val material = backupMaterial ?: backendClient.fetchBackupMaterial(currentSession)
+                backupMaterial = material
+                payload?.let { premiumBackupCrypto.decrypt(currentSession, it, material) }
             }.onSuccess { memory ->
                 runOnUiThread {
                     when {

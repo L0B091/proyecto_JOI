@@ -2,11 +2,33 @@ package com.joi.android.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import kotlin.math.min
 
 class SessionStorage(context: Context) {
-    private val preferences: SharedPreferences =
+    private val legacyPreferences: SharedPreferences =
         context.getSharedPreferences("joi_session", Context.MODE_PRIVATE)
+
+    private val preferences: SharedPreferences =
+        runCatching {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                "joi_session_secure",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }.getOrElse {
+            legacyPreferences
+        }
+
+    init {
+        migrateLegacyIfNeeded()
+    }
 
     fun saveUser(session: UserSession) {
         preferences.edit()
@@ -47,6 +69,22 @@ class SessionStorage(context: Context) {
     fun linkPercentage(session: UserSession): Int {
         val hours = session.usageMinutes / 60.0
         return min(99, (44 + hours * 2).toInt())
+    }
+
+    private fun migrateLegacyIfNeeded() {
+        if (preferences === legacyPreferences) return
+        if (preferences.contains(KEY_ID) || !legacyPreferences.contains(KEY_ID)) return
+        preferences.edit()
+            .putString(KEY_NAME, legacyPreferences.getString(KEY_NAME, "Usuario"))
+            .putString(KEY_EMAIL, legacyPreferences.getString(KEY_EMAIL, ""))
+            .putString(KEY_ID, legacyPreferences.getString(KEY_ID, null))
+            .putString(KEY_AUTH_TOKEN, legacyPreferences.getString(KEY_AUTH_TOKEN, null))
+            .putString(KEY_PHOTO_URL, legacyPreferences.getString(KEY_PHOTO_URL, null))
+            .putBoolean(KEY_EMAIL_VERIFIED, legacyPreferences.getBoolean(KEY_EMAIL_VERIFIED, false))
+            .putLong(KEY_PREMIUM_UNTIL, legacyPreferences.getLong(KEY_PREMIUM_UNTIL, 0L))
+            .putLong(KEY_USAGE_MINUTES, legacyPreferences.getLong(KEY_USAGE_MINUTES, 0L))
+            .apply()
+        legacyPreferences.edit().clear().apply()
     }
 
     companion object {

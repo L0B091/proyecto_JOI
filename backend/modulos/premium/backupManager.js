@@ -27,6 +27,7 @@ function normalizarBackup(userId, rawBackup = {}) {
     ciphertext: String(rawBackup.ciphertext || ""),
     updatedAt:
       rawBackup.updatedAt || new Date().toISOString(),
+    keyVersion: Number(rawBackup.keyVersion || 1),
     checksum: checksum(rawBackup.ciphertext || "")
   };
 }

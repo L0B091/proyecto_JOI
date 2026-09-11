@@ -78,6 +78,9 @@ function obtenerEstado(userId) {
     premiumHasta: premiumActivo ? registro.premiumHasta : null,
     plan: premiumActivo ? "premium" : "free",
     funciones: premiumActivo ? PLAN.premium : PLAN.free,
+    backupMaterial: premiumActivo
+      ? usuariosMemoria.obtenerOMaterializarBackupMaterial(userId)
+      : null,
     historial: Array.isArray(registro.historial) ? registro.historial : []
   };
 }
@@ -143,6 +146,13 @@ export default {
   PLAN,
   explicarPlan,
   obtenerEstado,
+  obtenerMateriales(userId) {
+    return {
+      userId,
+      backupMaterial:
+        usuariosMemoria.obtenerOMaterializarBackupMaterial(userId)
+    };
+  },
   registrarCheckout,
   activarPremium,
   sincronizarPlanUsuario,

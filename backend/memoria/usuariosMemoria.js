@@ -32,6 +32,7 @@ function normalizeUser(email, user = {}) {
     leyenda: typeof user.leyenda === "string" ? user.leyenda : "",
     emailVerified: Boolean(user.emailVerified),
     premiumUntil: typeof user.premiumUntil === "string" ? user.premiumUntil : null,
+    backupMaterial: typeof user.backupMaterial === "string" ? user.backupMaterial : null,
     createdAt: typeof user.createdAt === "string" ? user.createdAt : now,
     updatedAt: now,
     lastLoginAt: typeof user.lastLoginAt === "string" ? user.lastLoginAt : null
@@ -92,6 +93,21 @@ function listarUsuarios() {
   return Object.values(readUsers());
 }
 
+function obtenerOMaterializarBackupMaterial(userId) {
+  if (!userId) return null;
+  const user = obtenerUsuarioPorId(userId);
+  if (!user) return null;
+  if (typeof user.backupMaterial === "string" && user.backupMaterial.trim()) {
+    return user.backupMaterial;
+  }
+  const backupMaterial = crypto.randomBytes(32).toString("hex");
+  guardarUsuario(user.email, {
+    ...user,
+    backupMaterial
+  });
+  return backupMaterial;
+}
+
 export default {
   guardarUsuario,
   obtenerUsuario,
@@ -99,5 +115,6 @@ export default {
   obtenerUsuarioPorId,
   actualizarUltimoLogin,
   listarUsuarios,
+  obtenerOMaterializarBackupMaterial,
   normalizeEmail
 };
