@@ -11,6 +11,10 @@ function getGoogleAudiences() {
     .filter(Boolean);
 }
 
+function googleAuthEnabled() {
+  return String(process.env.GOOGLE_AUTH_ENABLED || "false").trim().toLowerCase() === "true";
+}
+
 async function verificarIdToken(idToken) {
   const audiences = getGoogleAudiences();
   if (audiences.length === 0) {
@@ -62,6 +66,9 @@ function sincronizarPerfil(payload) {
 }
 
 async function autenticarConGoogle(idToken) {
+  if (!googleAuthEnabled()) {
+    throw new HttpError(503, "Google Auth desactivada en Beta");
+  }
   if (!idToken || typeof idToken !== "string") {
     throw new HttpError(400, "idToken de Google requerido");
   }
@@ -108,5 +115,6 @@ function sesionesActivas() {
 export default {
   autenticarConGoogle,
   validarToken,
-  sesionesActivas
+  sesionesActivas,
+  googleAuthEnabled
 };

@@ -11,6 +11,11 @@ val googleWebClientId =
         ?: System.getenv("JOI_ANDROID_GOOGLE_WEB_CLIENT_ID")
         ?: ""
 
+val enableGoogleAuth =
+    ((findProperty("JOI_ENABLE_GOOGLE_AUTH") as String?)
+        ?: System.getenv("JOI_ANDROID_ENABLE_GOOGLE_AUTH")
+        ?: "false").toBoolean()
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -32,6 +37,7 @@ android {
         buildConfigField("String", "MERCADO_PAGO_URL", "\"https://www.mercadopago.com.ar/\"")
         buildConfigField("String", "BACKEND_BASE_URL", backendBaseUrl.gradleQuoted())
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", googleWebClientId.gradleQuoted())
+        buildConfigField("boolean", "ENABLE_GOOGLE_AUTH", enableGoogleAuth.toString())
     }
 
     buildTypes {

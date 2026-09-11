@@ -5,6 +5,13 @@ import usuariosMemoria from "../../memoria/usuariosMemoria.js";
 const NAMESPACE = "premium";
 const PREMIUM_DIAS = 30;
 
+function premiumBetaHabilitado() {
+  const env = String(process.env.BETA_PREMIUM_DEFAULT || "").trim().toLowerCase();
+  if (env === "true") return true;
+  if (env === "false") return false;
+  return String(process.env.NODE_ENV || "development").trim().toLowerCase() !== "production";
+}
+
 function obtenerPrecioPremium() {
   return Number(process.env.PREMIUM_PRICE_ARS || 3000);
 }
@@ -66,21 +73,28 @@ function sincronizarPlanUsuario(userId, premiumHasta = null) {
 function obtenerEstado(userId) {
   const registro = obtenerRegistro(userId);
   const premiumHastaMs = registro.premiumHasta ? new Date(registro.premiumHasta).getTime() : 0;
-  const premiumActivo = premiumHastaMs > Date.now();
+  const premiumRealActivo = premiumHastaMs > Date.now();
+  const premiumActivo = premiumRealActivo || premiumBetaHabilitado();
+  const premiumHasta = premiumRealActivo
+    ? registro.premiumHasta
+    : premiumActivo
+      ? "beta-debug"
+      : null;
 
-  if (!premiumActivo && registro.premiumHasta) {
+  if (!premiumRealActivo && registro.premiumHasta) {
     sincronizarPlanUsuario(userId, null);
   }
 
   return {
     userId,
     premiumActivo,
-    premiumHasta: premiumActivo ? registro.premiumHasta : null,
+    premiumHasta,
     plan: premiumActivo ? "premium" : "free",
     funciones: premiumActivo ? PLAN.premium : PLAN.free,
     backupMaterial: premiumActivo
       ? usuariosMemoria.obtenerOMaterializarBackupMaterial(userId)
       : null,
+    betaForced: !premiumRealActivo && premiumActivo,
     historial: Array.isArray(registro.historial) ? registro.historial : []
   };
 }

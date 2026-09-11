@@ -19,6 +19,7 @@ import java.util.TimeZone
 data class BackendAuthResult(
     val token: String,
     val userId: String,
+    val email: String,
     val displayName: String,
     val photoUrl: String?,
     val emailVerified: Boolean
@@ -41,6 +42,7 @@ data class PremiumStatusResult(
 class JoiBackendClient {
     val googleWebClientId: String = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
     private val baseUrl: String = BuildConfig.BACKEND_BASE_URL.trim().trimEnd('/')
+    private val betaPremiumMillis = 4102444800000L
 
     fun isConfigured(): Boolean = baseUrl.isNotEmpty()
 
@@ -62,10 +64,36 @@ class JoiBackendClient {
         return BackendAuthResult(
             token = data.getString("token"),
             userId = profile.optString("userId", data.optString("userId")),
+            email = profile.optString("email"),
             displayName = profile.optString("displayName", "Usuario"),
             photoUrl = profile.optString("photoUrl").ifBlank { null },
             emailVerified = profile.optBoolean("emailVerified", false)
         )
+    }
+
+    fun registerLocal(email: String, password: String, displayName: String): BackendAuthResult {
+        val json = request(
+            method = "POST",
+            path = "/api/auth/register",
+            body = JSONObject().apply {
+                put("email", email)
+                put("password", password)
+                put("displayName", displayName)
+            }
+        )
+        return parseLocalAuthResult(json)
+    }
+
+    fun loginLocal(email: String, password: String): BackendAuthResult {
+        val json = request(
+            method = "POST",
+            path = "/api/auth/login",
+            body = JSONObject().apply {
+                put("email", email)
+                put("password", password)
+            }
+        )
+        return parseLocalAuthResult(json)
     }
 
     fun sendChat(session: UserSession, memory: LocalJoiMemory, message: String): BackendChatResult {
@@ -88,7 +116,7 @@ class JoiBackendClient {
             tone = json.optJSONObject("expresion")?.optString("tono"),
             rhythm = json.optJSONObject("expresion")?.optString("ritmo"),
             microExpression = json.optJSONObject("expresion")?.optString("microexpresion"),
-            premiumUntilMillis = parseIsoMillis(json.optJSONObject("premium")?.optString("premiumHasta"))
+            premiumUntilMillis = parsePremiumMillis(json.optJSONObject("premium"))
         )
     }
 
@@ -101,7 +129,7 @@ class JoiBackendClient {
         val data = json.optJSONObject("data") ?: json
         return PremiumStatusResult(
             active = data.optBoolean("premiumActivo", false),
-            premiumUntilMillis = parseIsoMillis(data.optString("premiumHasta")) ?: 0L,
+            premiumUntilMillis = parsePremiumMillis(data) ?: 0L,
             backupMaterial = data.optString("backupMaterial").ifBlank { null }
         )
     }
@@ -150,6 +178,25 @@ class JoiBackendClient {
             setRequestProperty("Accept", "application/json")
             if (!authToken.isNullOrBlank()) {
                 setRequestProperty("Authorization", "Bearer ".plus(authToken))
+            }
+
+            private fun parseLocalAuthResult(json: JSONObject): BackendAuthResult {
+                val profile = json.optJSONObject("perfil") ?: JSONObject()
+                return BackendAuthResult(
+                    token = json.getString("token"),
+                    userId = profile.optString("userId"),
+                    email = profile.optString("email"),
+                    displayName = profile.optString("displayName", profile.optString("email", "Usuario")),
+                    photoUrl = profile.optString("photoUrl").ifBlank { null },
+                    emailVerified = true
+                )
+            }
+
+            private fun parsePremiumMillis(data: JSONObject?): Long? {
+                if (data == null) return null
+                val parsed = parseIsoMillis(data.optString("premiumHasta"))
+                if (parsed != null) return parsed
+                return if (data.optBoolean("premiumActivo", false)) betaPremiumMillis else null
             }
             doInput = true
             if (body != null) {

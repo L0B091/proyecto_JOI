@@ -2,6 +2,7 @@ package com.joi.android
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -47,14 +48,28 @@ class LoginActivity : AppCompatActivity() {
 
         val gsoBuilder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-        if (backendClient.googleWebClientId.isNotBlank()) {
+        if (BuildConfig.ENABLE_GOOGLE_AUTH && backendClient.googleWebClientId.isNotBlank()) {
             gsoBuilder.requestIdToken(backendClient.googleWebClientId)
         }
         val gso = gsoBuilder.build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
 
+        binding.googleButton.visibility =
+            if (BuildConfig.ENABLE_GOOGLE_AUTH) View.VISIBLE else View.GONE
+
         binding.googleButton.setOnClickListener {
+            if (!BuildConfig.ENABLE_GOOGLE_AUTH) {
+                Toast.makeText(this, getString(R.string.google_auth_disabled), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             googleSignInLauncher.launch(googleSignInClient.signInIntent)
+        }
+
+        binding.loginButton.setOnClickListener {
+            submitLocalAuth(register = false)
+        }
+        binding.registerButton.setOnClickListener {
+            submitLocalAuth(register = true)
         }
     }
 
@@ -121,5 +136,59 @@ class LoginActivity : AppCompatActivity() {
     private fun openMain() {
         startActivity(Intent(this, MainActivity::class.java))
         finish()
+    }
+
+    private fun submitLocalAuth(register: Boolean) {
+        val email = binding.emailInput.text?.toString()?.trim().orEmpty()
+        val password = binding.passwordInput.text?.toString()?.trim().orEmpty()
+        if (email.isEmpty() || password.isEmpty()) {
+            Toast.makeText(this, "Email y clave requeridos.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!backendClient.isConfigured() || !backendClient.isOnline(this)) {
+            Toast.makeText(this, getString(R.string.login_backend_required), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        setAuthBusy(true)
+        thread {
+            runCatching {
+                if (register) {
+                    backendClient.registerLocal(
+                        email = email,
+                        password = password,
+                        displayName = email.substringBefore("@").ifBlank { email }
+                    )
+                } else {
+                    backendClient.loginLocal(email, password)
+                }
+            }.onSuccess { auth ->
+                val session = UserSession(
+                    displayName = auth.displayName,
+                    email = auth.email.ifBlank { email },
+                    id = auth.userId.ifBlank { email },
+                    authToken = auth.token,
+                    photoUrl = auth.photoUrl,
+                    emailVerified = auth.emailVerified
+                )
+                runOnUiThread {
+                    setAuthBusy(false)
+                    sessionStorage.saveUser(session)
+                    Toast.makeText(this, getString(R.string.login_local_success), Toast.LENGTH_SHORT).show()
+                    openMain()
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    setAuthBusy(false)
+                    Toast.makeText(this, error.message ?: "No se pudo autenticar.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun setAuthBusy(isBusy: Boolean) {
+        binding.loginButton.isEnabled = !isBusy
+        binding.registerButton.isEnabled = !isBusy
+        binding.googleButton.isEnabled = !isBusy
     }
 }

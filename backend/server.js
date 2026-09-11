@@ -78,6 +78,7 @@ function handleAsync(handler) {
 
 function authStatus() {
   return {
+    googleEnabled: googleAuth.googleAuthEnabled(),
     googleConfigured: Boolean(String(process.env.GOOGLE_CLIENT_ID || "").trim()),
     mercadoPagoConfigured: Boolean(String(process.env.MERCADO_PAGO_ACCESS_TOKEN || "").trim()),
     openWeatherConfigured: Boolean(String(process.env.OPENWEATHER_API_KEY || "").trim()),

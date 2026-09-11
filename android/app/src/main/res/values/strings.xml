@@ -4,6 +4,13 @@
     <string name="login_title">J O I</string>
     <string name="login_subtitle">AUTO-SYNC // READY</string>
     <string name="login_google">INGRESAR CON GOOGLE</string>
+    <string name="login_email_hint">EMAIL</string>
+    <string name="login_password_hint">CLAVE</string>
+    <string name="login_local">INGRESAR</string>
+    <string name="register_local">CREAR CUENTA</string>
+    <string name="login_mode_beta">BETA // LOGIN LOCAL ACTIVO</string>
+    <string name="login_backend_required">BACKEND NO DISPONIBLE PARA LOGIN LOCAL.</string>
+    <string name="login_local_success">SESIÓN LOCAL/BACKEND INICIADA.</string>
     <string name="bitacora">BITÁCORA</string>
     <string name="limpiar_chat">Limpiar chat</string>
     <string name="cerrar_sesion">TERMINAR SESIÓN</string>
@@ -23,6 +30,7 @@
     <string name="premium_restore_empty">NO HAY RESPALDO PREMIUM DISPONIBLE.</string>
     <string name="premium_restore_failed">NO SE PUDO RESTAURAR EL RESPALDO PREMIUM.</string>
     <string name="backend_auth_unavailable">GOOGLE SIGN-IN LOCAL ACTIVO. FALTA CONFIGURAR BACKEND O CLIENT ID WEB.</string>
+    <string name="google_auth_disabled">GOOGLE AUTH DESACTIVADA EN BETA.</string>
     <string name="bitacora_sync_wait">AUTO-SYNC // WAITING BACKEND</string>
     <string name="premium_backup">RESPALDAR MEMORIA</string>
     <string name="premium_restore">RESTAURAR RESPALDO</string>

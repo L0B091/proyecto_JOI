@@ -6,10 +6,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DEFAULT_API_URL =
-  "https://api.venice.ai/api/v1/chat/completions";
+  "https://openrouter.ai/api/v1/chat/completions";
 
 const DEFAULT_MODEL =
-  "dphn/Dolphin-Mistral-24B-Venice-Edition";
+  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 
@@ -42,17 +42,17 @@ function cargarPromptBase() {
 
 function obtenerConfiguracion() {
   return {
-    provider: "venice",
+    provider: "openrouter",
     apiUrl:
-      process.env.VENICE_API_URL ||
+      process.env.OPENROUTER_API_URL ||
       DEFAULT_API_URL,
     model:
-      process.env.VENICE_MODEL ||
+      process.env.OPENROUTER_MODEL ||
       DEFAULT_MODEL,
     apiKey:
-      process.env.VENICE_API_KEY || "",
+      process.env.OPENROUTER_API_KEY || "",
     timeoutMs: Number(
-      process.env.VENICE_TIMEOUT_MS ||
+      process.env.OPENROUTER_TIMEOUT_MS ||
       DEFAULT_TIMEOUT_MS
     )
   };
@@ -364,7 +364,7 @@ async function generarRespuesta({
       throw new Error(
         data?.error ||
         data?.message ||
-        "Venice respondió con estado " +
+        "OpenRouter respondió con estado " +
         response.status
       );
     }
@@ -376,7 +376,7 @@ async function generarRespuesta({
 
     if (!respuesta) {
       throw new Error(
-        "Venice no devolvió contenido"
+        "OpenRouter no devolvió contenido"
       );
     }
 
