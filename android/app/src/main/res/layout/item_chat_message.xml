@@ -19,7 +19,7 @@
             android:text="@string/joi_data_stream"
             android:textAllCaps="true"
             android:textColor="@color/joi_accent"
-            android:textLetterSpacing="0.16"
+            android:letterSpacing="0.16"
             android:textSize="10sp" />
 
         <TextView
@@ -30,7 +30,7 @@
             android:paddingHorizontal="16dp"
             android:paddingVertical="14dp"
             android:textColor="@color/joi_text_primary"
-            android:textLetterSpacing="0.03"
+            android:letterSpacing="0.03"
             android:textSize="13sp"
             android:lineSpacingExtra="6dp" />
     </LinearLayout>

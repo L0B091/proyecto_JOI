@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="joi_black">#030506</color>
+    <color name="joi_drawer_scrim">#B0000000</color>
     <color name="joi_surface">#071011</color>
     <color name="joi_panel">#091314</color>
     <color name="joi_panel_alt">#0B1011</color>

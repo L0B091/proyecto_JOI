@@ -25,6 +25,10 @@
             android:enabled="true"
             android:exported="false" />
         <receiver
+            android:name=".notifications.JoiInitiativeReceiver"
+            android:enabled="true"
+            android:exported="false" />
+        <receiver
             android:name=".notifications.JoiBootReceiver"
             android:enabled="true"
             android:exported="false">

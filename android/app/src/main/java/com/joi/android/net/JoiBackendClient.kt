@@ -127,7 +127,12 @@ class JoiBackendClient {
         return parseLocalAuthResult(json)
     }
 
-    fun sendChat(session: UserSession, memory: LocalJoiMemory, message: String): BackendChatResult {
+    fun sendChat(
+        session: UserSession,
+        memory: LocalJoiMemory,
+        message: String,
+        initiative: JSONObject? = null
+    ): BackendChatResult {
         val json = request(
             method = "POST",
             path = "/chat",
@@ -138,6 +143,7 @@ class JoiBackendClient {
                 put("contexto", JSONObject().apply {
                     put("clienteOficial", "android_nativo")
                     put("memoriaLocal", memory.toBackendContext())
+                    if (initiative != null) put("iniciativa", initiative)
                 })
             }
         )
@@ -149,6 +155,31 @@ class JoiBackendClient {
             microExpression = json.optJSONObject("expresion")?.optString("microexpresion"),
             premiumUntilMillis = parsePremiumMillis(json.optJSONObject("premium"))
         )
+    }
+
+    fun evaluateInitiative(
+        session: UserSession,
+        memory: LocalJoiMemory,
+        state: JSONObject,
+        events: JSONArray = JSONArray()
+    ): JSONObject {
+        val profile = JSONObject((state.optJSONObject("perfilRitmo") ?: JSONObject()).toString())
+            .put("zonaHoraria", TimeZone.getDefault().id)
+            .put("ultimaInteraccion", state.optLong("ultimaInteraccion"))
+        val json = request(
+            method = "POST",
+            path = "/api/iniciativas/evaluar",
+            authToken = session.authToken,
+            body = JSONObject().apply {
+                put("userId", session.id)
+                put("memoriaLocal", memory.toBackendContext())
+                put("registro", state.optJSONArray("registro") ?: JSONArray())
+                put("perfilRitmo", profile)
+                put("disponibilidad", JSONObject().put("enPrimerPlano", false).put("notificacionesHabilitadas", true))
+                put("eventos", events)
+            }
+        )
+        return json.getJSONObject("data")
     }
 
     fun fetchPremiumStatus(session: UserSession): PremiumStatusResult {
@@ -330,7 +361,7 @@ class JoiBackendClient {
         val connection = (URL("$baseUrl$path").openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 10_000
-            readTimeout = 20_000
+            readTimeout = 45_000
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json")
             if (!authToken.isNullOrBlank()) {
@@ -342,23 +373,27 @@ class JoiBackendClient {
             }
         }
 
-        if (body != null) {
-            OutputStreamWriter(connection.outputStream).use { writer ->
-                writer.write(body.toString())
+        try {
+            if (body != null) {
+                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+                    writer.write(body.toString())
+                }
             }
-        }
 
-        val responseCode = connection.responseCode
-        val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-        val responseText = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-        val responseJson = responseText.takeIf { it.isNotBlank() }?.let(::JSONObject) ?: JSONObject()
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            val responseText = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            val responseJson = responseText.takeIf { it.isNotBlank() }?.let(::JSONObject) ?: JSONObject()
 
-        if (responseCode !in 200..299) {
-            throw IllegalStateException(responseJson.optString("error").ifBlank {
-                "Error HTTP $responseCode"
-            })
+            if (responseCode !in 200..299) {
+                throw IllegalStateException(responseJson.optString("error").ifBlank {
+                    "Error HTTP $responseCode"
+                })
+            }
+            return responseJson
+        } finally {
+            connection.disconnect()
         }
-        return responseJson
     }
 
     private fun parseIsoMillis(rawValue: String?): Long? {

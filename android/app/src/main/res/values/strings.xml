@@ -45,4 +45,14 @@
     <string name="notification_message_opened">AVISO JOI RECIBIDO.</string>
     <string name="alarm_protocol_title">Hora de despertar</string>
     <string name="alarm_protocol_message">JOI registró tu protocolo de despertar.</string>
+    <string name="initiative_settings">INICIATIVA Y DESCANSO</string>
+    <string name="initiative_enable">Activar iniciativas</string>
+    <string name="initiative_disable">Pausar iniciativas (las alarmas siguen activas)</string>
+    <string name="initiative_sleep_schedule">Configurar horario de descanso</string>
+    <string name="initiative_learn_schedule">Usar estimación progresiva del horario</string>
+    <string name="initiative_sleep_time">Hora habitual de dormir</string>
+    <string name="initiative_wake_time">Hora habitual de despertar</string>
+    <string name="initiative_invalid_sleep">Las horas de dormir y despertar deben ser diferentes.</string>
+    <string name="initiative_unavailable">Esta iniciativa no está disponible para la sesión actual.</string>
+    <string name="initiative_close">Cerrar</string>
 </resources>

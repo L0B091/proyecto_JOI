@@ -4,6 +4,8 @@
  * entre interacciones con el usuario.
  */
 
+import crypto from "node:crypto";
+
 const vidaFueraDeConversacion = {
     // Continuidad mental
     continuidad: {
@@ -60,5 +62,45 @@ const vidaFueraDeConversacion = {
         "mapa_estados_globales"
     ]
 };
+
+export function obtenerContinuidad(memoria, ahora, vigenciaMs) {
+    const reciente = (memoria.recentConversation || []).filter(item =>
+        item.timestamp <= ahora && item.timestamp >= ahora - vigenciaMs
+    );
+    const usuarios = reciente.filter(item => item.role === "user");
+    const ultimo = usuarios.at(-1);
+    if (!ultimo) return [];
+    const referenciaDe = item => `${item.timestamp}:${crypto.createHash("sha256").update(item.text).digest("hex")}`;
+    const referencia = referenciaDe(ultimo);
+    const pendientes = usuarios.filter(item =>
+        /\b(pendiente|retomemos|recordame|recordarme|manana|despues)\b|mañana|después|no olvides/i.test(item.text)
+    );
+    const fuentes = [];
+    if (pendientes.length || (ultimo.text.includes("?") && reciente.at(-1)?.role === "user")) {
+        fuentes.push({
+            categoria: "CONVERSACION", motivo: "Retomar un tema pendiente documentado en la conversacion",
+            referenciaEvento: referencia, timestamp: ultimo.timestamp,
+            contexto: { evidencia: (pendientes.at(-1) || ultimo).text, pendiente: true }
+        });
+    }
+    for (const recuerdo of (memoria.importantMemories || []).slice(-3)) {
+        if (recuerdo.text && recuerdo.timestamp <= ahora) fuentes.push({
+            categoria: "RECUERDO", motivo: "Retomar un recuerdo importante que el usuario compartio",
+            referenciaEvento: referenciaDe(recuerdo), timestamp: ultimo.timestamp,
+            contexto: { evidencia: recuerdo.text, referenciaMemoria: recuerdo.timestamp }
+        });
+    }
+    fuentes.push({
+        categoria: "CURIOSIDAD", motivo: "Preguntar por un detalle del tema reciente del usuario",
+        referenciaEvento: referencia, timestamp: ultimo.timestamp,
+        contexto: { evidencia: ultimo.text }
+    });
+    fuentes.push({
+        categoria: "SOCIAL", motivo: "Retomar naturalmente el contacto con contexto real",
+        referenciaEvento: referencia, timestamp: ultimo.timestamp,
+        contexto: { evidencia: ultimo.text, espontanea: true }
+    });
+    return fuentes;
+}
 
 export default vidaFueraDeConversacion;
