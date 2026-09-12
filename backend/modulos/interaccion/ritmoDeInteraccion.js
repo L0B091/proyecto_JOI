@@ -7,6 +7,13 @@
  */
 
 function ritmoDeInteraccion(contexto = {}) {
+  if (contexto.evaluacionAutonoma) {
+    return {
+      accion: contexto.usuarioActivo || contexto.tiempoDesdeUltimoMensaje < contexto.pausaMinimaSegundos
+        ? "esperar" : "iniciar_interaccion",
+      prioridad: "baja"
+    };
+  }
 
   const {
     tiempoDesdeUltimoMensaje = 0,

@@ -49,6 +49,9 @@ const healthRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+const initiativeRateLimit = rateLimit({
+  windowMs: 60 * 1000, limit: 6, standardHeaders: true, legacyHeaders: false
+});
 
 function getAllowedOrigins() {
   const configured = String(process.env.CORS_ALLOWED_ORIGINS || "")
@@ -411,6 +414,14 @@ app.post("/api/memoria/fiscal/:userId/:documentoId/estado", requireAuth, (req, r
   res.json({ ok: Boolean(data), data });
 });
 
+app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, handleAsync(async (req, res) => {
+  if (req.authToken && !req.auth) return res.status(401).json({ ok: false, error: "Sesion vencida" });
+  const data = await orquestadorNotificaciones.evaluarAutonomia({
+    ...req.body, userId: req.auth?.userId || req.body?.userId
+  });
+  return res.json({ ok: true, data });
+}));
+
 app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
   const { mensaje, userId, contexto } = req.body || {};
   if (!mensaje || typeof mensaje !== "string") {
@@ -419,9 +430,10 @@ app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
 
   const effectiveUserId = req.auth?.userId || userId || "anonimo";
   const resultado = await orquestadorChat(mensaje, {
+    ...contexto,
     userId: effectiveUserId,
-    timestamp: Date.now(),
-    ...contexto
+    generarIniciativa: false,
+    timestamp: Date.now()
   });
 
   if (req.auth) {
@@ -454,6 +466,6 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 JOI corriendo en http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  console.log(`🚀 JOI corriendo en http://localhost:${server.address().port}`);
 });

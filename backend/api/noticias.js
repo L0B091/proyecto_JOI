@@ -1,6 +1,6 @@
 import HttpError from "../utils/httpError.js";
 
-export async function obtenerNoticias(ciudad = "", categorias = []) {
+export async function obtenerNoticias(ciudad = "", categorias = [], opciones = {}) {
   const apiKey = String(process.env.NEWS_API_KEY || "").trim();
   if (!apiKey) {
     throw new HttpError(503, "NEWS_API_KEY no está configurado");
@@ -13,12 +13,12 @@ export async function obtenerNoticias(ciudad = "", categorias = []) {
   url.searchParams.set("apiKey", apiKey);
 
   if (categorias.length > 0) {
-    url.searchParams.set("q", categorias.join(" "));
+    url.searchParams.set("q", categorias.join(" OR "));
   } else if (ciudad) {
     url.searchParams.set("q", ciudad);
   }
 
-  const respuesta = await fetch(url);
+  const respuesta = await fetch(url, { signal: AbortSignal.timeout(opciones.timeoutMs || 8000) });
   const raw = await respuesta.text();
   const data = raw ? JSON.parse(raw) : null;
 

@@ -1,12 +1,14 @@
 package com.joi.android
 
 import android.Manifest
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -29,12 +31,15 @@ import com.joi.android.net.JoiBackendClient
 import com.joi.android.notifications.JoiAlarmScheduler
 import com.joi.android.notifications.JoiNotificationChannels
 import com.joi.android.notifications.JoiNotificationCoordinator
+import com.joi.android.notifications.JoiInitiativeScheduler
+import com.joi.android.notifications.JoiInitiativeStore
 import com.joi.android.ui.ChatAdapter
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.concurrent.thread
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
@@ -42,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var localMemoryStore: LocalMemoryStore
     private lateinit var alarmScheduler: JoiAlarmScheduler
     private lateinit var notificationCoordinator: JoiNotificationCoordinator
+    private lateinit var initiativeStore: JoiInitiativeStore
+    private lateinit var initiativeScheduler: JoiInitiativeScheduler
     private lateinit var chatAdapter: ChatAdapter
 
     private val fullConversation = mutableListOf<ChatMessage>()
@@ -79,6 +86,8 @@ class MainActivity : AppCompatActivity() {
         localMemoryStore = LocalMemoryStore(this)
         alarmScheduler = JoiAlarmScheduler(this)
         notificationCoordinator = JoiNotificationCoordinator(this)
+        initiativeStore = JoiInitiativeStore(this)
+        initiativeScheduler = JoiInitiativeScheduler(this)
 
         JoiNotificationChannels.ensure(this)
         ensureNotificationPermission()
@@ -91,9 +100,13 @@ class MainActivity : AppCompatActivity() {
 
         startedFromEmptyLocalMemory = localMemoryStore.isEffectivelyEmpty(currentSession.id)
         hydrateConversation()
+        localMemoryStore.observe(currentSession.id).observe(this) { record ->
+            if (record != null) hydrateConversation()
+        }
         syncPremiumState()
         handleIncomingIntent(intent)
         syncBackendAlarms()
+        if (initiativeStore.isEnabled(currentSession.id)) initiativeScheduler.ensureScheduled()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -106,6 +119,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         sessionStartedAt = SystemClock.elapsedRealtime()
         player?.playWhenReady = true
+        if (::currentSession.isInitialized) initiativeStore.observeInteraction(currentSession.id)
     }
 
     override fun onPause() {
@@ -117,6 +131,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
         player?.playWhenReady = false
+        if (::currentSession.isInitialized && sessionStorage.loadUser()?.id == currentSession.id &&
+            initiativeStore.isEnabled(currentSession.id)
+        ) initiativeScheduler.afterInteraction()
     }
 
     override fun onDestroy() {
@@ -126,12 +143,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupToolbar() {
+        binding.drawerLayout.setScrimColor(ContextCompat.getColor(this, R.color.joi_drawer_scrim))
         binding.bitacoraButton.setOnClickListener {
             binding.drawerLayout.openDrawer(GravityCompat.START)
         }
         binding.clearChatButton.setOnClickListener {
+            localMemoryStore.clearConversationDisplay(currentSession.id)
+            initiativeStore.clearActiveContext(currentSession.id)
             visibleConversation.clear()
-            fullConversation.clear()
             chatAdapter.submitList(visibleConversation.toList())
             binding.avatarStateText.text = "STATE // STANDBY"
             Toast.makeText(this, "PANTALLA LIMPIA", Toast.LENGTH_SHORT).show()
@@ -181,6 +200,7 @@ class MainActivity : AppCompatActivity() {
         binding.premiumButton.setOnClickListener {
             showPremiumDialog()
         }
+        binding.initiativeSettingsButton.setOnClickListener { showInitiativeSettings() }
     }
 
     private fun setupWidget() {
@@ -268,7 +288,7 @@ class MainActivity : AppCompatActivity() {
             val isJoi = entry.role != "user"
             val message = ChatMessage(text, isJoi)
             fullConversation += message
-            visibleConversation += message
+            if (entry.timestamp > memory.hiddenConversationThrough) visibleConversation += message
         }
         binding.avatarStateText.text = "STATE // ${memory.shortTermFocus.uppercase(Locale.getDefault())}"
         renderConversation()
@@ -277,16 +297,19 @@ class MainActivity : AppCompatActivity() {
     private fun sendMessage() {
         val content = binding.messageInput.text?.toString()?.trim().orEmpty()
         if (content.isEmpty()) return
+        val initiative = initiativeStore.activeContext(currentSession.id)
 
         val visibleUserText = content.uppercase(Locale.getDefault())
         val userMessage = ChatMessage(visibleUserText, false)
         fullConversation += userMessage
         visibleConversation += userMessage
         localMemoryStore.appendUserMessage(currentSession.id, content)
+        initiativeStore.observeInteraction(currentSession.id)
+        initiative?.let { initiativeStore.responded(currentSession.id, it.getString("id"), responseText = content) }
         binding.messageInput.text?.clear()
         binding.avatarStateText.text = "STATE // SYNCING"
         renderConversation()
-        dispatchChat(content)
+        dispatchChat(content, initiative)
     }
 
     private fun renderConversation() {
@@ -323,7 +346,7 @@ class MainActivity : AppCompatActivity() {
         builder.show()
     }
 
-    private fun dispatchChat(content: String) {
+    private fun dispatchChat(content: String, initiative: JSONObject? = null) {
         if (!backendClient.isConfigured() || !backendClient.isOnline(this)) {
             appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
             return
@@ -333,7 +356,7 @@ class MainActivity : AppCompatActivity() {
         binding.sendButton.isEnabled = false
         thread {
             runCatching {
-                backendClient.sendChat(currentSession, memorySnapshot, content)
+                backendClient.sendChat(currentSession, memorySnapshot, content, initiative)
             }.onSuccess { result ->
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
@@ -483,6 +506,8 @@ class MainActivity : AppCompatActivity() {
         val stage = intent.getIntExtra(JoiNotificationCoordinator.EXTRA_STAGE, 0)
 
         when (eventType) {
+            "initiative" -> openInitiative(intent)
+
             "message" -> {
                 appendAssistantReply(
                     message.ifBlank { getString(R.string.notification_message_opened) },
@@ -506,6 +531,91 @@ class MainActivity : AppCompatActivity() {
         }
 
         intent.removeExtra(JoiNotificationCoordinator.EXTRA_EVENT_TYPE)
+    }
+
+    private fun openInitiative(intent: Intent) {
+        val userId = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_USER_ID)
+        val id = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_INITIATIVE_ID)
+        if (userId != currentSession.id || id.isNullOrBlank()) {
+            Log.w("JoiInitiative", "Aviso de otra sesion o sin identificador")
+            Toast.makeText(this, R.string.initiative_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val initiative = initiativeStore.find(userId, id)
+            if (initiative == null || initiative.optString("estado") == "CANCELADA") {
+                Toast.makeText(this, R.string.initiative_unavailable, Toast.LENGTH_SHORT).show()
+                return
+            }
+            if (initiative.isNull("abierta")) {
+                localMemoryStore.appendInitiativeMessage(userId, id, initiative.getString("mensaje"))
+            }
+            initiativeStore.opened(userId, id)
+            notificationCoordinator.cancelInitiative(userId, id)
+            hydrateConversation()
+        } catch (error: Exception) {
+            Log.e("JoiInitiative", "No se pudo abrir el contexto: ${error.javaClass.simpleName}")
+            Toast.makeText(this, R.string.initiative_unavailable, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showInitiativeSettings() {
+        val enabled = initiativeStore.isEnabled(currentSession.id)
+        val choices = arrayOf(
+            getString(if (enabled) R.string.initiative_disable else R.string.initiative_enable),
+            getString(R.string.initiative_sleep_schedule),
+            getString(R.string.initiative_learn_schedule)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.initiative_settings)
+            .setItems(choices) { _, which ->
+                when (which) {
+                    0 -> {
+                        initiativeStore.setEnabled(currentSession.id, !enabled)
+                        if (enabled) {
+                            initiativeScheduler.cancel()
+                            initiativeStore.clearActiveContext(currentSession.id)
+                            initiativeStore.records(currentSession.id).forEach {
+                                val id = it.getString("id")
+                                notificationCoordinator.cancelInitiative(currentSession.id, id)
+                                initiativeStore.cancelled(currentSession.id, id)
+                            }
+                        } else {
+                            ensureNotificationPermission()
+                            initiativeScheduler.ensureScheduled()
+                        }
+                    }
+                    1 -> configureInitiativeSleep()
+                    2 -> initiativeStore.configureSleep(currentSession.id, null, null)
+                }
+            }
+            .setNegativeButton(R.string.initiative_close, null)
+            .show()
+    }
+
+    private fun configureInitiativeSleep() {
+        val configured = initiativeStore.snapshot(currentSession.id)
+            .optJSONObject("perfilRitmo")?.optJSONObject("configurado")
+        val sleep = configured?.optString("dormir")?.split(":")
+        val wake = configured?.optString("despertar")?.split(":")
+        val clock = Calendar.getInstance()
+        val picker = TimePickerDialog(this, { _, sleepHour, sleepMinute ->
+            val wakePicker = TimePickerDialog(this, { _, wakeHour, wakeMinute ->
+                val sleepTime = String.format(Locale.US, "%02d:%02d", sleepHour, sleepMinute)
+                val wakeTime = String.format(Locale.US, "%02d:%02d", wakeHour, wakeMinute)
+                if (sleepTime == wakeTime) {
+                    Toast.makeText(this, R.string.initiative_invalid_sleep, Toast.LENGTH_SHORT).show()
+                } else {
+                    initiativeStore.configureSleep(currentSession.id, sleepTime, wakeTime)
+                }
+            }, wake?.getOrNull(0)?.toIntOrNull() ?: clock.get(Calendar.HOUR_OF_DAY),
+                wake?.getOrNull(1)?.toIntOrNull() ?: clock.get(Calendar.MINUTE), true)
+            wakePicker.setTitle(R.string.initiative_wake_time)
+            wakePicker.show()
+        }, sleep?.getOrNull(0)?.toIntOrNull() ?: clock.get(Calendar.HOUR_OF_DAY),
+            sleep?.getOrNull(1)?.toIntOrNull() ?: clock.get(Calendar.MINUTE), true)
+        picker.setTitle(R.string.initiative_sleep_time)
+        picker.show()
     }
 
     private fun resolveAlarmEvent(alarmId: String, stage: Int) {
@@ -538,6 +648,12 @@ class MainActivity : AppCompatActivity() {
         GoogleSignIn.getClient(this, options)
             .signOut()
             .addOnCompleteListener {
+                initiativeScheduler.cancel()
+                initiativeStore.clearActiveContext(currentSession.id)
+                initiativeStore.records(currentSession.id).forEach {
+                    notificationCoordinator.cancelInitiative(currentSession.id, it.getString("id"))
+                    initiativeStore.cancelled(currentSession.id, it.getString("id"))
+                }
                 sessionStorage.clear()
                 startActivity(Intent(this, LoginActivity::class.java))
                 finish()

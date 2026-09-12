@@ -9,7 +9,8 @@ import java.util.Locale
 data class LocalConversationEntry(
     val role: String,
     val text: String,
-    val timestamp: Long
+    val timestamp: Long,
+    val initiativeId: String? = null
 )
 
 data class LocalMemoryNote(
@@ -35,7 +36,8 @@ data class LocalJoiMemory(
     val importantMemories: MutableList<LocalMemoryNote> = mutableListOf(),
     val codeMemories: MutableList<LocalAssetMemory> = mutableListOf(),
     val fiscalMemories: MutableList<LocalAssetMemory> = mutableListOf(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val hiddenConversationThrough: Long = 0L
 ) {
     fun withUpdatedTimestamp() = copy(updatedAt = System.currentTimeMillis())
 
@@ -45,12 +47,14 @@ data class LocalJoiMemory(
         put("shortTermFocus", shortTermFocus)
         put("shortTermIntent", shortTermIntent)
         put("updatedAt", updatedAt)
+        put("hiddenConversationThrough", hiddenConversationThrough)
         put("conversation", JSONArray().apply {
             conversation.forEach { entry ->
                 put(JSONObject().apply {
                     put("role", entry.role)
                     put("text", entry.text)
                     put("timestamp", entry.timestamp)
+                    entry.initiativeId?.let { put("initiativeId", it) }
                 })
             }
         })
@@ -93,7 +97,8 @@ data class LocalJoiMemory(
                 importantMemories = jsonArrayToNotes(json.optJSONArray("importantMemories")),
                 codeMemories = jsonArrayToAssets(json.optJSONArray("codeMemories")),
                 fiscalMemories = jsonArrayToAssets(json.optJSONArray("fiscalMemories")),
-                updatedAt = json.optLong("updatedAt", System.currentTimeMillis())
+                updatedAt = json.optLong("updatedAt", System.currentTimeMillis()),
+                hiddenConversationThrough = json.optLong("hiddenConversationThrough", 0L)
             )
         }
 
@@ -126,7 +131,8 @@ data class LocalJoiMemory(
                 result += LocalConversationEntry(
                     role = item.optString("role", "user"),
                     text = item.optString("text", ""),
-                    timestamp = item.optLong("timestamp", System.currentTimeMillis())
+                    timestamp = item.optLong("timestamp", System.currentTimeMillis()),
+                    initiativeId = item.optString("initiativeId").takeIf { it.isNotBlank() }
                 )
             }
             return result
@@ -169,6 +175,8 @@ class LocalMemoryStore(context: Context) {
     private val dao = database.memoryDao()
     private val localVault = LocalVault(appContext)
     private val legacyRoot = File(appContext.filesDir, "joi_memory")
+
+    fun observe(userId: String) = dao.observeByUserId(userId)
 
     fun load(userId: String): LocalJoiMemory {
         migrateLegacyIfNeeded(userId)
@@ -220,7 +228,7 @@ class LocalMemoryStore(context: Context) {
         val text = rawText.trim()
         if (text.isEmpty()) return
         val updated = memory.copy(
-            conversation = (memory.conversation + LocalConversationEntry("user", text, System.currentTimeMillis()))
+            conversation = (memory.conversation + LocalConversationEntry("user", text, nextMessageTime(memory)))
                 .takeLast(200)
                 .toMutableList(),
             shortTermFocus = inferFocus(text),
@@ -236,12 +244,30 @@ class LocalMemoryStore(context: Context) {
         val text = rawText.trim()
         if (text.isEmpty()) return
         val updated = memory.copy(
-            conversation = (memory.conversation + LocalConversationEntry("assistant", text, System.currentTimeMillis()))
+            conversation = (memory.conversation + LocalConversationEntry("assistant", text, nextMessageTime(memory)))
                 .takeLast(200)
                 .toMutableList()
         )
         save(updated)
     }
+
+    fun appendInitiativeMessage(userId: String, initiativeId: String, text: String) {
+        val memory = load(userId)
+        if (memory.conversation.any { it.initiativeId == initiativeId }) return
+        require(text.isNotBlank())
+        val entry = LocalConversationEntry("assistant", text, nextMessageTime(memory), initiativeId)
+        save(memory.copy(conversation = (memory.conversation + entry).takeLast(200).toMutableList()))
+    }
+
+    fun clearConversationDisplay(userId: String) {
+        val memory = load(userId)
+        save(memory.copy(hiddenConversationThrough = maxOf(
+            memory.hiddenConversationThrough, memory.conversation.maxOfOrNull { it.timestamp } ?: 0L
+        )))
+    }
+
+    private fun nextMessageTime(memory: LocalJoiMemory): Long =
+        maxOf(System.currentTimeMillis(), (memory.conversation.lastOrNull()?.timestamp ?: 0L) + 1L, memory.hiddenConversationThrough + 1L)
 
     private fun migrateLegacyIfNeeded(userId: String) {
         if (dao.findByUserId(userId) != null) return
