@@ -418,7 +418,7 @@ app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, handleAs
   if (req.authToken && !req.auth) return res.status(401).json({ ok: false, error: "Sesion vencida" });
   const data = await orquestadorNotificaciones.evaluarAutonomia({
     ...req.body, userId: req.auth?.userId || req.body?.userId
-  }, { authUserId: req.auth?.userId });
+  });
   return res.json({ ok: true, data });
 }));
 

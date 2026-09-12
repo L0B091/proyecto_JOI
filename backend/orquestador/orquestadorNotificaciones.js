@@ -3,7 +3,6 @@ import protocoloDespertador from "../modulos/protocoloDespertador.js";
 import { evaluarIniciativa, interesesDe, CATEGORIAS, POLITICA_INICIATIVA } from "../comportamiento/iniciativaConversacional.js";
 import { validarConfiguracion, instanteLocal } from "../modulos/interaccion/perfilRitmoUsuario.js";
 import noticiasApi from "../api/noticias.js";
-import calendarioApi from "../api/calendario.js";
 import veniceClient from "../llm/veniceClient.js";
 import HttpError from "../utils/httpError.js";
 
@@ -93,40 +92,13 @@ export function validarSolicitudIniciativa(body) {
   return { ...body, registro, perfilRitmo: perfil, eventos };
 }
 
-function eventosCalendario(userId, ahora, zona) {
-  const local = instanteLocal(ahora, zona);
-  return calendarioApi.listarEventos(userId).filter(evento => evento.fecha === local.fecha)
-    .filter(evento => /^\d{2}:\d{2}$/.test(evento.hora))
-    .filter(evento => {
-      const [h, m] = evento.hora.split(":").map(Number);
-      const falta = h * 60 + m - local.minuto;
-      return falta >= 0 && falta <= 60;
-    }).map(evento => ({
-      id: evento.id, referenciaEvento: evento.id, categoria: "EVENTO", fuente: "calendario",
-      motivo: "Recordar un evento proximo registrado por el usuario",
-      timestamp: ahora, expiresAt: ahora + 60 * 60 * 1000,
-      contexto: { evidencia: evento.descripcion, programadoPorUsuario: true, fecha: evento.fecha, hora: evento.hora }
-    }));
-}
-
 export async function evaluarAutonomia(body, opciones = {}) {
   const solicitud = validarSolicitudIniciativa(body);
   const ahora = opciones.ahora ?? Date.now();
   const generar = opciones.generar || ((iniciativa, memoria) => veniceClient.generarIniciativa(iniciativa, memoria));
   const configurado = opciones.llmConfigurado ?? veniceClient.estaConfigurado();
   const fallosFuentes = [];
-  let eventos = [...solicitud.eventos];
-  // A locally supplied identity never authorizes reading server-side memory or calendar records.
-  if (opciones.authUserId) {
-    try {
-      eventos.push(...(opciones.calendario || eventosCalendario)(
-        opciones.authUserId, ahora, solicitud.perfilRitmo.zonaHoraria || "UTC"
-      ));
-    } catch (error) {
-      console.error("[iniciativa] Fuente calendario no disponible:", error.name);
-      fallosFuentes.push("calendario_no_disponible");
-    }
-  }
+  const eventos = [...solicitud.eventos];
   let decision = evaluarIniciativa({ ...solicitud, ahora, eventos });
   const salir = motivoEspera => ({
     decision: "ESPERAR", motivoEspera, perfilRitmo: decision.perfilRitmo, fallosFuentes

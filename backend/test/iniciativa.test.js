@@ -194,14 +194,34 @@ test("validation rejects malformed timestamps, states, schedules and sources", (
   }
 });
 
-test("unconfigured LLM does not call providers or authenticated server data", async () => {
+test("unconfigured LLM does not call remote providers", async () => {
   const result = await evaluarAutonomia(solicitud(), {
     ahora, llmConfigurado: false, newsConfigurado: true,
-    calendario() { throw new Error("Must not read server data for local identities"); },
     generar() { assert.fail("Must not call LLM"); },
     noticias() { assert.fail("Must not call News"); }
   });
   assert.equal(result.motivoEspera, "llm_no_configurado");
+});
+
+test("beta evaluation never reads calendar events, including for authenticated identities", async () => {
+  for (const authUserId of [undefined, "authenticated-test"]) {
+    let calendarReads = 0;
+    const result = await evaluarAutonomia(solicitud(), {
+      ahora, authUserId, llmConfigurado: true, newsConfigurado: false,
+      calendario() {
+        calendarReads++;
+        return [evento("EVENTO", { fuente: "calendario" })];
+      },
+      generar: async iniciativa => {
+        assert.equal(iniciativa.fuente, "continuidad");
+        return { used: true, respuesta: "Retomamos tu proyecto?" };
+      }
+    });
+    assert.equal(calendarReads, 0);
+    assert.equal(result.decision, "INICIAR");
+    assert.equal(result.iniciativa.fuente, "continuidad");
+    assert.deepEqual(result.fallosFuentes, []);
+  }
 });
 
 test("News failure preserves available context, LLM failure never fabricates message", async () => {

@@ -86,9 +86,10 @@ la nueva pantalla si una respuesta llega despues de una recreacion.
 
 ## Fuentes y reglas
 
-Se utilizan noticias de News API, eventos proximos del calendario del
-usuario autenticado y contexto real de la memoria local: pendientes,
+Se utilizan noticias de News API y contexto real de la memoria local: pendientes,
 recuerdos importantes, intereses y curiosidad contextual.
+El calendario/agenda no se integra con las iniciativas de esta beta.
+El modulo y las rutas de calendario anteriores al PR se conservan intactos.
 No hay una API de transito/transporte ni de eventos sociales externos en
 esta beta. El contrato admite eventos de esas categorias con evidencia y
 referencia estable, pero **no simula un feed ni inventa incidentes**.
@@ -99,8 +100,7 @@ para emitir nuevas alertas meteorologicas.
 Los eventos externos deben incluir `categoria`, `motivo`, `fuente`,
 `timestamp`, `expiresAt` y `contexto.evidencia`; pueden incluir `id` o
 `referenciaEvento`. Sin ID se calcula una firma determinista. Las fuentes
-externas requieren coincidencias con intereses/contexto; el calendario
-explicitamente registrado se trata como un compromiso del usuario.
+externas requieren coincidencias con intereses/contexto.
 Un evento no garantiza un aviso. Los avisos de alarma enviados por Android
 solo posponen otras iniciativas cercanas: su entrega sigue exclusivamente
 por AlarmManager para respetar sonido, vibracion, etapas y horario de sueno.
@@ -146,8 +146,8 @@ no cancela alarmas explicitas.
 - Sin backend configurado, red o OpenRouter disponible no hay iniciativa
   generada; chat local y alarmas ya programadas siguen disponibles.
 - Los reintentos de errores inesperados son limitados y con backoff.
-- Una identidad local sin token usa solo su contexto enviado; no permite
-  recuperar calendario o memoria de otra cuenta del backend.
+- La evaluacion usa el contexto enviado, sin consultar la agenda ni
+  recuperar memoria de otras cuentas del backend.
 
 ## Configuracion y comprobacion
 
