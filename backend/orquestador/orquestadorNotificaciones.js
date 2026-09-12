@@ -60,12 +60,41 @@ async function tick() {
   }
 }
 
+function construirDespachosAndroid(alarma) {
+ if (!alarma) return [];
+ let offsetMs = 0;
+ return protocoloDespertador.obtenerDefinicionStages().map((stage) => {
+   const despacho = {
+     stage: stage.stage,
+     offsetFromAlarmMs: offsetMs,
+     channelId: stage.channelId,
+     notificationType: stage.notificationType,
+     vibration: stage.vibration,
+     sound: stage.sound,
+     titulo:
+       stage.stage >= 3
+         ? "Hora de despertar"
+         : alarma.titulo || "Hora de despertar",
+     mensaje:
+       stage.mensajes[0] ||
+       alarma.mensaje ||
+       "JOI registró tu protocolo de despertar."
+   };
+   offsetMs += stage.delayToNextStageMs;
+   return despacho;
+ });
+}
+
+function iniciar(intervalMs = 60000) {
+ return setInterval(tick, intervalMs);
+}
+
 /**
 * LOOP DEL ORQUESTADOR
 * Ejecuta revisión cada 60 segundos
 */
-setInterval(tick, 60000);
-
 export default {
-  tick
+ tick,
+ iniciar,
+ construirDespachosAndroid
 }; 

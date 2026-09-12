@@ -34,4 +34,15 @@
     <string name="bitacora_sync_wait">AUTO-SYNC // WAITING BACKEND</string>
     <string name="premium_backup">RESPALDAR MEMORIA</string>
     <string name="premium_restore">RESTAURAR RESPALDO</string>
+    <string name="notification_permission_needed">JOI NECESITA PERMISO DE NOTIFICACIONES.</string>
+    <string name="exact_alarm_permission_needed">JOI NECESITA PERMISO DE ALARMAS EXACTAS.</string>
+    <string name="message_notification_sent">AVISO JOI ENVIADO.</string>
+    <string name="alarm_requires_backend">NECESITAS LOGIN LOCAL/BACKEND PARA ALARMAS.</string>
+    <string name="alarm_test_scheduled">ALARMA JOI PROGRAMADA.</string>
+    <string name="alarm_cancelled">ALARMA JOI CANCELADA.</string>
+    <string name="alarm_none_active">NO HAY ALARMAS JOI ACTIVAS.</string>
+    <string name="notification_alarm_opened">EVENTO DE ALARMA RECIBIDO.</string>
+    <string name="notification_message_opened">AVISO JOI RECIBIDO.</string>
+    <string name="alarm_protocol_title">Hora de despertar</string>
+    <string name="alarm_protocol_message">JOI registró tu protocolo de despertar.</string>
 </resources>

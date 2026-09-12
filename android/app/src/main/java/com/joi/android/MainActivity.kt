@@ -1,16 +1,21 @@
 package com.joi.android
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.joi.android.data.AvatarWidgetScene
@@ -21,8 +26,12 @@ import com.joi.android.data.SessionStorage
 import com.joi.android.data.UserSession
 import com.joi.android.databinding.ActivityMainBinding
 import com.joi.android.net.JoiBackendClient
+import com.joi.android.notifications.JoiAlarmScheduler
+import com.joi.android.notifications.JoiNotificationChannels
+import com.joi.android.notifications.JoiNotificationCoordinator
 import com.joi.android.ui.ChatAdapter
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.concurrent.thread
@@ -31,16 +40,27 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var sessionStorage: SessionStorage
     private lateinit var localMemoryStore: LocalMemoryStore
+    private lateinit var alarmScheduler: JoiAlarmScheduler
+    private lateinit var notificationCoordinator: JoiNotificationCoordinator
     private lateinit var chatAdapter: ChatAdapter
+
     private val fullConversation = mutableListOf<ChatMessage>()
     private val visibleConversation = mutableListOf<ChatMessage>()
     private val backendClient = JoiBackendClient()
     private val premiumBackupCrypto = PremiumBackupCrypto()
+
     private var player: ExoPlayer? = null
     private var sessionStartedAt: Long = 0L
     private lateinit var currentSession: UserSession
     private var startedFromEmptyLocalMemory: Boolean = false
     private var backupMaterial: String? = null
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Toast.makeText(this, getString(R.string.notification_permission_needed), Toast.LENGTH_SHORT).show()
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,15 +76,30 @@ class MainActivity : AppCompatActivity() {
         }
         currentSession = session
 
+        localMemoryStore = LocalMemoryStore(this)
+        alarmScheduler = JoiAlarmScheduler(this)
+        notificationCoordinator = JoiNotificationCoordinator(this)
+
+        JoiNotificationChannels.ensure(this)
+        ensureNotificationPermission()
+
         setupToolbar()
         setupChat()
-        localMemoryStore = LocalMemoryStore(this)
-        startedFromEmptyLocalMemory = localMemoryStore.isEffectivelyEmpty(currentSession.id)
         setupBitacora(currentSession)
         setupWidget()
         setupVideo()
+
+        startedFromEmptyLocalMemory = localMemoryStore.isEffectivelyEmpty(currentSession.id)
         hydrateConversation()
         syncPremiumState()
+        handleIncomingIntent(intent)
+        syncBackendAlarms()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
     }
 
     override fun onResume() {
@@ -122,7 +157,7 @@ class MainActivity : AppCompatActivity() {
             append(if (backendClient.isConfigured()) "[JOI] ${getString(R.string.bitacora_sync_wait)}\n" else "[JOI] MODO LOCAL PRIMARIO\n")
             append("[MEMORIA] MEMORIA LOCAL MULTICAPA ACTIVA\n")
             append("[USUARIO] SESIÓN VINCULADA A ${session.email.uppercase(Locale.getDefault())}\n")
-            append("[SISTEMA] VIDEO LOCAL, CHAT Y BITÁCORA DISPONIBLES")
+            append("[SISTEMA] VIDEO LOCAL, CHAT, NOTIFICACIONES Y BITÁCORA DISPONIBLES")
         }
 
         binding.editProfileButton.setOnClickListener {
@@ -163,14 +198,27 @@ class MainActivity : AppCompatActivity() {
             updateWidgetScene(AvatarWidgetScene("CLIP ATENCIÓN", "ESCUCHA ACTIVA", "20°C"))
             binding.avatarStateText.text = "STATE // LISTENING"
         }
+
         binding.audioPrimaryButton.setOnClickListener {
-            Toast.makeText(this, "AUDIO // ACTIVE", Toast.LENGTH_SHORT).show()
+            ensureNotificationPermission()
+            notificationCoordinator.showMessageNotification(
+                userId = currentSession.id,
+                title = "JOI",
+                message = "Canal JOI_MESSAGES listo para prueba."
+            )
+            Toast.makeText(this, getString(R.string.message_notification_sent), Toast.LENGTH_SHORT).show()
         }
+
         binding.audioMoreButton.setOnClickListener {
-            binding.drawerLayout.openDrawer(GravityCompat.START)
+            scheduleTestAlarm()
         }
+        binding.audioMoreButton.setOnLongClickListener {
+            binding.drawerLayout.openDrawer(GravityCompat.START)
+            true
+        }
+
         binding.audioMuteButton.setOnClickListener {
-            Toast.makeText(this, "AUDIO // MUTE", Toast.LENGTH_SHORT).show()
+            cancelNextAlarm()
         }
     }
 
@@ -339,6 +387,144 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun syncBackendAlarms() {
+        if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
+            return
+        }
+        thread {
+            runCatching {
+                backendClient.listAlarms(currentSession)
+            }.onSuccess { alarms ->
+                alarms.forEach { alarmScheduler.schedule(it) }
+            }
+        }
+    }
+
+    private fun scheduleTestAlarm() {
+        if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
+            Toast.makeText(this, getString(R.string.alarm_requires_backend), Toast.LENGTH_SHORT).show()
+            return
+        }
+        ensureNotificationPermission()
+        if (!alarmScheduler.canScheduleExactAlarms()) {
+            alarmScheduler.exactAlarmPermissionIntent()?.let(::startActivity)
+            Toast.makeText(this, getString(R.string.exact_alarm_permission_needed), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val nextMinute = Calendar.getInstance().apply {
+            add(Calendar.MINUTE, 1)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val hour = SimpleDateFormat("HH:mm", Locale.getDefault()).format(nextMinute.time)
+
+        thread {
+            runCatching {
+                val alarm = backendClient.createAlarm(
+                    currentSession,
+                    hour = hour,
+                    title = getString(R.string.alarm_protocol_title),
+                    message = getString(R.string.alarm_protocol_message)
+                )
+                alarmScheduler.schedule(alarm)
+            }.onSuccess {
+                runOnUiThread {
+                    Toast.makeText(this, "${getString(R.string.alarm_test_scheduled)} $hour", Toast.LENGTH_SHORT).show()
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    Toast.makeText(this, error.message ?: getString(R.string.alarm_requires_backend), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun cancelNextAlarm() {
+        val nextAlarm = alarmScheduler.peekNextAlarm(currentSession.id)
+        if (nextAlarm == null) {
+            Toast.makeText(this, getString(R.string.alarm_none_active), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        alarmScheduler.cancel(nextAlarm.id)
+        notificationCoordinator.cancelAlarmNotifications(nextAlarm.id)
+
+        if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
+            Toast.makeText(this, getString(R.string.alarm_cancelled), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        thread {
+            runCatching {
+                backendClient.cancelAlarm(currentSession, nextAlarm.id)
+            }.onSuccess {
+                runOnUiThread {
+                    Toast.makeText(this, getString(R.string.alarm_cancelled), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        intent ?: return
+        val eventType = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_EVENT_TYPE) ?: return
+        val title = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_TITLE).orEmpty()
+        val message = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_MESSAGE).orEmpty()
+        val alarmId = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_ALARM_ID)
+        val stage = intent.getIntExtra(JoiNotificationCoordinator.EXTRA_STAGE, 0)
+
+        when (eventType) {
+            "message" -> {
+                appendAssistantReply(
+                    message.ifBlank { getString(R.string.notification_message_opened) },
+                    "NOTICE",
+                    title.ifBlank { "MESSAGE" }
+                )
+            }
+
+            "alarm" -> {
+                appendAssistantReply(
+                    message.ifBlank { getString(R.string.notification_alarm_opened) },
+                    "AWAKE",
+                    "STAGE_$stage"
+                )
+                if (!alarmId.isNullOrBlank()) {
+                    alarmScheduler.cancel(alarmId)
+                    notificationCoordinator.cancelAlarmNotifications(alarmId)
+                    resolveAlarmEvent(alarmId, stage)
+                }
+            }
+        }
+
+        intent.removeExtra(JoiNotificationCoordinator.EXTRA_EVENT_TYPE)
+    }
+
+    private fun resolveAlarmEvent(alarmId: String, stage: Int) {
+        if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
+            return
+        }
+        thread {
+            runCatching {
+                backendClient.reportAlarmEvent(currentSession, alarmId, stage, "respondio")
+            }.onSuccess { result ->
+                result.message?.let { reply ->
+                    runOnUiThread {
+                        appendAssistantReply(reply, "AWAKE", "CLIMA")
+                    }
+                }
+            }
+        }
+    }
+
     private fun updateCurrentSession(session: UserSession) {
         currentSession = session
         sessionStorage.saveUser(session)
@@ -406,6 +592,7 @@ class MainActivity : AppCompatActivity() {
                         memory == null && !silent -> {
                             Toast.makeText(this, getString(R.string.premium_restore_empty), Toast.LENGTH_SHORT).show()
                         }
+
                         memory != null -> {
                             localMemoryStore.replace(memory.copy(userId = currentSession.id))
                             startedFromEmptyLocalMemory = false

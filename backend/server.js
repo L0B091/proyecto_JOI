@@ -14,6 +14,9 @@ import notificacionesApi from "./api/notificaciones.js";
 import mercadoPagoApi from "./api/mercadoPago.js";
 import premiumManager from "./modulos/premium/premiumManager.js";
 import backupManager from "./modulos/premium/backupManager.js";
+import gestorDeAlarmas from "./modulos/gestorDeAlarmas.js";
+import protocoloDespertador from "./modulos/protocoloDespertador.js";
+import orquestadorNotificaciones from "./orquestador/orquestadorNotificaciones.js";
 import codigoMemoria from "./memoria/codigoMemoria.js";
 import documentosFiscales from "./memoria/documentosFiscales.js";
 import googleAuth from "./auth/googleAuth.js";
@@ -94,6 +97,14 @@ function ensureOwnUser(req) {
     throw error;
   }
   return requested;
+}
+
+function serializarAlarma(alarma) {
+  if (!alarma) return null;
+  return {
+    ...alarma,
+    dispatchPlan: orquestadorNotificaciones.construirDespachosAndroid(alarma)
+  };
 }
 
 app.get("/", (req, res) => {
@@ -243,6 +254,65 @@ app.post("/api/notificaciones/:userId/:id/leida", requireAuth, (req, res) => {
   const data = notificacionesApi.marcarLeida(userId, req.params.id);
   res.json({ ok: Boolean(data), data });
 });
+
+app.get("/api/alarmas/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const data = gestorDeAlarmas
+    .obtenerAlarmasPorUsuario(userId)
+    .map(serializarAlarma);
+  res.json({ ok: true, data });
+});
+
+app.post("/api/alarmas/:userId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const alarma = gestorDeAlarmas.crearAlarma(
+    userId,
+    req.body?.hora,
+    {
+      titulo: req.body?.titulo,
+      mensaje: req.body?.mensaje
+    }
+  );
+  res.status(201).json({ ok: true, data: serializarAlarma(alarma) });
+});
+
+app.patch("/api/alarmas/:userId/:alarmId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  const payload = { ...req.body };
+  if (payload.hora) {
+    const hora = gestorDeAlarmas.normalizarHora(payload.hora);
+    if (!hora) {
+      return res.status(400).json({ ok: false, error: "Hora inválida" });
+    }
+    payload.hora = hora;
+  }
+  const data = gestorDeAlarmas.actualizarAlarma(userId, payload, req.params.alarmId);
+  res.json({ ok: Boolean(data), data: serializarAlarma(data) });
+});
+
+app.delete("/api/alarmas/:userId/:alarmId", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  gestorDeAlarmas.cerrarAlarma(userId, req.params.alarmId);
+  res.json({ ok: true, data: { userId, alarmId: req.params.alarmId, estado: "RESOLVED" } });
+});
+
+app.post("/api/alarmas/:userId/:alarmId/evento", requireAuth, handleAsync(async (req, res) => {
+  const userId = ensureOwnUser(req);
+  const stage = Number(req.body?.stage || 1);
+  const estado = String(req.body?.estado || "disparada");
+
+  const data = estado === "respondio"
+    ? await protocoloDespertador.registrarRespuestaUsuario(userId, req.params.alarmId)
+    : protocoloDespertador.registrarDisparoAndroid(userId, stage, req.params.alarmId);
+
+  res.json({
+    ok: Boolean(data),
+    data: {
+      ...data,
+      alarma: serializarAlarma(gestorDeAlarmas.obtenerAlarma(userId, req.params.alarmId))
+    }
+  });
+}));
 
 app.get("/api/mercadopago/plan", (req, res) => {
   res.json({ ok: true, data: mercadoPagoApi.explicarPremium(String(req.query.feature || "M/A")) });

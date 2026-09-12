@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import com.joi.android.BuildConfig
 import com.joi.android.data.LocalJoiMemory
 import com.joi.android.data.UserSession
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
@@ -37,6 +38,36 @@ data class PremiumStatusResult(
     val active: Boolean,
     val premiumUntilMillis: Long,
     val backupMaterial: String?
+)
+
+data class AlarmDispatchStage(
+    val stage: Int,
+    val offsetFromAlarmMs: Long,
+    val channelId: String,
+    val notificationType: String,
+    val vibration: String,
+    val sound: String,
+    val title: String,
+    val message: String
+)
+
+data class AlarmRecord(
+    val id: String,
+    val userId: String,
+    val hour: String,
+    val title: String,
+    val message: String,
+    val state: String,
+    val stage: Int,
+    val attempts: Int,
+    val dispatchPlan: List<AlarmDispatchStage>
+)
+
+data class AlarmEventResult(
+    val state: String,
+    val message: String?,
+    val nextStage: Int?,
+    val alarm: AlarmRecord?
 )
 
 class JoiBackendClient {
@@ -163,6 +194,132 @@ class JoiBackendClient {
         return json.optJSONObject("data")?.optJSONObject("backup")
     }
 
+    fun listAlarms(session: UserSession): List<AlarmRecord> {
+        val json = request(
+            method = "GET",
+            path = "/api/alarmas/${session.id}",
+            authToken = session.authToken
+        )
+        return parseAlarmList(json.optJSONArray("data"))
+    }
+
+    fun createAlarm(session: UserSession, hour: String, title: String, message: String): AlarmRecord {
+        val json = request(
+            method = "POST",
+            path = "/api/alarmas/${session.id}",
+            authToken = session.authToken,
+            body = JSONObject().apply {
+                put("hora", hour)
+                put("titulo", title)
+                put("mensaje", message)
+            }
+        )
+        return parseAlarmRecord(json.optJSONObject("data"))
+            ?: throw IllegalStateException("Alarma inválida")
+    }
+
+    fun updateAlarm(session: UserSession, alarmId: String, hour: String, title: String, message: String): AlarmRecord {
+        val json = request(
+            method = "PATCH",
+            path = "/api/alarmas/${session.id}/$alarmId",
+            authToken = session.authToken,
+            body = JSONObject().apply {
+                put("hora", hour)
+                put("titulo", title)
+                put("mensaje", message)
+            }
+        )
+        return parseAlarmRecord(json.optJSONObject("data"))
+            ?: throw IllegalStateException("No se pudo actualizar la alarma")
+    }
+
+    fun cancelAlarm(session: UserSession, alarmId: String) {
+        request(
+            method = "DELETE",
+            path = "/api/alarmas/${session.id}/$alarmId",
+            authToken = session.authToken
+        )
+    }
+
+    fun reportAlarmEvent(session: UserSession, alarmId: String, stage: Int, state: String): AlarmEventResult {
+        val json = request(
+            method = "POST",
+            path = "/api/alarmas/${session.id}/$alarmId/evento",
+            authToken = session.authToken,
+            body = JSONObject().apply {
+                put("stage", stage)
+                put("estado", state)
+            }
+        )
+        val data = json.optJSONObject("data") ?: JSONObject()
+        return AlarmEventResult(
+            state = data.optString("estado", state),
+            message = data.optString("mensaje").ifBlank { null },
+            nextStage = data.optInt("stageSiguiente").takeIf { it > 0 },
+            alarm = parseAlarmRecord(data.optJSONObject("alarma"))
+        )
+    }
+
+    private fun parseLocalAuthResult(json: JSONObject): BackendAuthResult {
+        val profile = json.optJSONObject("perfil") ?: JSONObject()
+        return BackendAuthResult(
+            token = json.getString("token"),
+            userId = profile.optString("userId"),
+            email = profile.optString("email"),
+            displayName = profile.optString("displayName", profile.optString("email", "Usuario")),
+            photoUrl = profile.optString("photoUrl").ifBlank { null },
+            emailVerified = true
+        )
+    }
+
+    private fun parseAlarmList(array: JSONArray?): List<AlarmRecord> {
+        if (array == null) return emptyList()
+        val result = mutableListOf<AlarmRecord>()
+        for (index in 0 until array.length()) {
+            parseAlarmRecord(array.optJSONObject(index))?.let(result::add)
+        }
+        return result
+    }
+
+    private fun parseAlarmRecord(json: JSONObject?): AlarmRecord? {
+        if (json == null || json.optString("id").isBlank()) return null
+        val dispatchArray = json.optJSONArray("dispatchPlan")
+        val dispatchPlan = mutableListOf<AlarmDispatchStage>()
+        if (dispatchArray != null) {
+            for (index in 0 until dispatchArray.length()) {
+                val item = dispatchArray.optJSONObject(index) ?: continue
+                dispatchPlan += AlarmDispatchStage(
+                    stage = item.optInt("stage", 1),
+                    offsetFromAlarmMs = item.optLong("offsetFromAlarmMs", 0L),
+                    channelId = item.optString("channelId", "JOI_MESSAGES"),
+                    notificationType = item.optString("notificationType", "message"),
+                    vibration = item.optString("vibration", "double"),
+                    sound = item.optString("sound", "bubble"),
+                    title = item.optString("titulo", "Hora de despertar"),
+                    message = item.optString("mensaje", "JOI registró tu protocolo de despertar.")
+                )
+            }
+        }
+        return AlarmRecord(
+            id = json.optString("id"),
+            userId = json.optString("userID", json.optString("userId")),
+            hour = json.optString("hora"),
+            title = json.optString("titulo", "Hora de despertar"),
+            message = json.optString("mensaje", "JOI registró tu protocolo de despertar."),
+            state = json.optString("estado", "ACTIVE"),
+            stage = json.optInt("stage", 1),
+            attempts = json.optInt("intentos", 0),
+            dispatchPlan = dispatchPlan
+        )
+    }
+
+    private fun parsePremiumMillis(data: JSONObject?): Long? {
+        if (data == null) return null
+        val parsed = parseIsoMillis(data.optString("premiumHasta"))
+        if (parsed != null) return parsed
+        return if (data.optBoolean("premiumActivo", false)) betaPremiumMillis else null
+    }
+
     private fun request(
         method: String,
         path: String,
@@ -178,25 +335,6 @@ class JoiBackendClient {
             setRequestProperty("Accept", "application/json")
             if (!authToken.isNullOrBlank()) {
                 setRequestProperty("Authorization", "Bearer ".plus(authToken))
-            }
-
-            private fun parseLocalAuthResult(json: JSONObject): BackendAuthResult {
-                val profile = json.optJSONObject("perfil") ?: JSONObject()
-                return BackendAuthResult(
-                    token = json.getString("token"),
-                    userId = profile.optString("userId"),
-                    email = profile.optString("email"),
-                    displayName = profile.optString("displayName", profile.optString("email", "Usuario")),
-                    photoUrl = profile.optString("photoUrl").ifBlank { null },
-                    emailVerified = true
-                )
-            }
-
-            private fun parsePremiumMillis(data: JSONObject?): Long? {
-                if (data == null) return null
-                val parsed = parseIsoMillis(data.optString("premiumHasta"))
-                if (parsed != null) return parsed
-                return if (data.optBoolean("premiumActivo", false)) betaPremiumMillis else null
             }
             doInput = true
             if (body != null) {

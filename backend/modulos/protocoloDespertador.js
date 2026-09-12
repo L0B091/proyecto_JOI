@@ -2,6 +2,10 @@
 
 import obtenerClima from "../api/clima.js";
 import gestorDeAlarmas from "./gestorDeAlarmas.js";
+import notificacionesApi from "../api/notificaciones.js";
+
+const VIBRACION_INTERVALO_MS = 600;
+const MENSAJE_INTERVALO_MS = 1500;
 
 /**
 * Utilidad de espera
@@ -15,7 +19,7 @@ function delay(ms) {
 */
 async function vibracionDoble() {
   console.log("📳 vibración");
-  await delay(600);
+  await delay(VIBRACION_INTERVALO_MS);
   console.log("📳 vibración");
 }
 
@@ -24,6 +28,7 @@ async function vibracionDoble() {
 */
 async function push(userID, mensaje) {
   console.log(`📩 [${userID}] ${mensaje}`);
+  notificacionesApi.notificarAlarma(userID, mensaje);
 }
 
 async function obtenerMensajeClimaSeguro() {
@@ -56,11 +61,74 @@ const mensajesPorStage = {
   ]
 };
 
+function obtenerMensajesStage(stage) {
+  return [...(mensajesPorStage[Number(stage)] || [])];
+}
+
+function obtenerDefinicionStages() {
+  return [1, 2, 3].map((stage) => {
+    const mensajes = obtenerMensajesStage(stage);
+    return {
+      stage,
+      channelId: stage >= 3 ? "JOI_ALARMS" : "JOI_MESSAGES",
+      notificationType: stage >= 3 ? "alarm" : "message",
+      vibration: stage >= 3 ? "alarm" : "double",
+      sound: stage >= 3 ? "alarm" : "bubble",
+      delayToNextStageMs:
+        stage < 3
+          ? mensajes.length * (VIBRACION_INTERVALO_MS + MENSAJE_INTERVALO_MS)
+          : 0,
+      mensajes
+    };
+  });
+}
+
+async function registrarRespuestaUsuario(userID, alarmId = null) {
+  const mensajeClima = await obtenerMensajeClimaSeguro();
+  await push(userID, `🌤 ${mensajeClima}`);
+  gestorDeAlarmas.cerrarAlarma(userID, alarmId);
+  return {
+    estado: "respondio",
+    mensaje: mensajeClima
+  };
+}
+
+function registrarDisparoAndroid(userID, stage, alarmId = null) {
+  const alarma = gestorDeAlarmas.obtenerAlarma(userID, alarmId);
+  if (!alarma || alarma.estado !== "ACTIVE") {
+    return null;
+  }
+
+  const mensajes = obtenerMensajesStage(stage);
+  const mensaje = mensajes[0] || "Hora de despertar";
+  notificacionesApi.notificarAlarma(userID, mensaje);
+
+  if (Number(stage) >= 3) {
+    gestorDeAlarmas.cerrarAlarma(userID, alarmId);
+    return {
+      estado: "alarmaSonora",
+      mensaje
+    };
+  }
+
+  gestorDeAlarmas.actualizarAlarma(userID, {
+    stage: Number(stage) + 1,
+    intentos: Number(alarma.intentos || 0) + 1,
+    ultimoDisparoStage: Number(stage)
+  }, alarmId);
+
+  return {
+    estado: "stageProgramado",
+    mensaje,
+    stageSiguiente: Number(stage) + 1
+  };
+}
+
 /**
 * Ejecuta una ronda de mensajes del stage actual
 */
 async function ejecutarStage(userID, stage, respuestaUsuario = false) {
-  const mensajes = mensajesPorStage[stage];
+  const mensajes = obtenerMensajesStage(stage);
 
   for (const msg of mensajes) {
     await vibracionDoble();
@@ -69,19 +137,7 @@ async function ejecutarStage(userID, stage, respuestaUsuario = false) {
 
     // Si el usuario responde en cualquier momento
     if (respuestaUsuario) {
-      const mensajeClima = await obtenerMensajeClimaSeguro();
-
-      await push(
-        userID,
-        `🌤 ${mensajeClima}`
-      );
-
-      gestorDeAlarmas.cerrarAlarma(userID);
-
-      return {
-        estado: "respondio",
-        mensaje: mensajeClima
-      };
+      return registrarRespuestaUsuario(userID);
     }
   }
 
@@ -134,5 +190,8 @@ async function ejecutarAlarma(userID, respuestaUsuario = false) {
 }
 
 export default {
-  ejecutarAlarma
+  ejecutarAlarma,
+  obtenerDefinicionStages,
+  registrarRespuestaUsuario,
+  registrarDisparoAndroid
 }; 

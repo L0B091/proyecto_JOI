@@ -9,6 +9,15 @@ import path from "path";
 
 const DB_PATH = path.resolve("./backend/data/alarmas.json");
 
+function normalizarHora(hora) {
+  const value = String(hora || "").trim();
+  if (!/^\d{2}:\d{2}$/.test(value)) return null;
+  const [horas, minutos] = value.split(":").map(Number);
+  if (!Number.isInteger(horas) || !Number.isInteger(minutos)) return null;
+  if (horas < 0 || horas > 23 || minutos < 0 || minutos > 59) return null;
+  return `${String(horas).padStart(2, "0")}:${String(minutos).padStart(2, "0")}`;
+}
+
 /* =========================================================
    UTILIDADES
 ========================================================= */
@@ -40,13 +49,35 @@ function escribirDB(alarmas) {
 /**
 * Crear alarma
 */
-function crearAlarma(userID, hora) {
+function crearAlarma(userID, hora, data = {}) {
   const alarmas = leerDB();
+  const horaNormalizada = normalizarHora(hora);
+  if (!userID || !horaNormalizada) {
+    throw new Error("Datos de alarma inválidos");
+  }
+
+  const duplicada = alarmas.find((alarma) =>
+    alarma.userID === userID &&
+    alarma.estado === "ACTIVE" &&
+    alarma.hora === horaNormalizada &&
+    String(alarma.titulo || "Hora de despertar") === String(data.titulo || "Hora de despertar")
+  );
+
+  if (duplicada) {
+    return actualizarAlarma(userID, {
+      ...data,
+      hora: horaNormalizada
+    }, duplicada.id);
+  }
 
   const nuevaAlarma = {
     id: Date.now().toString(),
     userID,
-    hora, // "HH:MM"
+    hora: horaNormalizada,
+    titulo: data.titulo || "Hora de despertar",
+    mensaje: data.mensaje || "JOI registró tu protocolo de despertar.",
+    stage: Number(data.stage || 1),
+    intentos: Number(data.intentos || 0),
     estado: "ACTIVE",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -157,11 +188,13 @@ function actualizarDesdeApp(alarmId, data = {}) {
   });
 
   escribirDB(actualizadas);
+  return actualizadas.find(a => a.id === alarmId) ?? null;
 }
 
 /* ========================================================= */
 
 export default {
+  normalizarHora,
   crearAlarma,
   obtenerAlarmas,
   obtenerAlarmasActivas,
